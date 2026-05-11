@@ -17,25 +17,28 @@
     <main class="app-shell">
       <section class="hero">
         <div class="brand-logo" aria-label="KARRIT">
-          <svg viewBox="0 0 360 128" role="img" aria-hidden="true">
-            <defs>
-              <linearGradient id="truckOrange" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ffb12a" />
-                <stop offset="100%" stop-color="#ff6f00" />
-              </linearGradient>
-            </defs>
-            <rect x="12" y="42" width="104" height="34" rx="10" fill="url(#truckOrange)" />
-            <path d="M116 48h28l20 18v10h-48z" fill="#16314d" />
-            <rect x="124" y="53" width="22" height="12" rx="2" fill="#d7ecff" />
-            <circle cx="42" cy="82" r="13" fill="#16314d" />
-            <circle cx="42" cy="82" r="6" fill="#f9fbff" />
-            <circle cx="122" cy="82" r="13" fill="#16314d" />
-            <circle cx="122" cy="82" r="6" fill="#f9fbff" />
-            <path d="M22 34h84" stroke="#ffd98a" stroke-width="6" stroke-linecap="round" />
-
-            <text x="162" y="74" fill="#13283f" font-family="Bebas Neue, sans-serif" font-size="58" letter-spacing="4">KARRIT</text>
-            <text x="163" y="98" fill="#5d728a" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="700" letter-spacing="2">LOGISTICA DE CARGA</text>
-          </svg>
+          <div class="brand-badge" aria-hidden="true">
+            <svg class="truck-mini" viewBox="0 0 140 90" role="img">
+              <defs>
+                <linearGradient id="truckOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#ffb12a" />
+                  <stop offset="100%" stop-color="#ff6f00" />
+                </linearGradient>
+              </defs>
+              <rect x="10" y="35" width="78" height="28" rx="9" fill="url(#truckOrange)" />
+              <path d="M88 40h20l18 16v7H88z" fill="#17314c" />
+              <rect x="96" y="45" width="18" height="11" rx="2" fill="#d8eeff" />
+              <circle cx="34" cy="68" r="12" fill="#17314c" />
+              <circle cx="34" cy="68" r="5" fill="#f9fbff" />
+              <circle cx="97" cy="68" r="12" fill="#17314c" />
+              <circle cx="97" cy="68" r="5" fill="#f9fbff" />
+              <path d="M20 28h60" stroke="#ffd98a" stroke-width="6" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="brand-title-wrap">
+            <p class="brand-title">KARRIT</p>
+            <p class="brand-subtitle">LOGISTICA DE CARGA</p>
+          </div>
         </div>
         <p class="eyebrow">KARRIT LOGISTICS</p>
         <h1>Mueve tu carga. Gana tu dia.</h1>
