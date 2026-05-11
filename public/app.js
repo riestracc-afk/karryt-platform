@@ -25,7 +25,8 @@ const elements = {
   rideIdMeta: document.getElementById("rideIdMeta"),
   rideStatusPill: document.getElementById("rideStatusPill"),
   tripProgressFill: document.getElementById("tripProgressFill"),
-  progressPercent: document.getElementById("progressPercent")
+  progressPercent: document.getElementById("progressPercent"),
+  pricingTableBody: document.getElementById("pricingTableBody")
 };
 
 const statusLabel = {
@@ -96,6 +97,32 @@ async function recalculateQuote() {
   );
   const data = await response.json();
   elements.fareEstimate.textContent = formatCurrency(data.fareEstimate);
+}
+
+async function loadPricing() {
+  try {
+    const response = await fetch("/api/pricing");
+    const pricing = await response.json();
+
+    if (!Array.isArray(pricing) || pricing.length === 0) {
+      elements.pricingTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 16px;">No hay tarifas disponibles</td></tr>';
+      return;
+    }
+
+    elements.pricingTableBody.innerHTML = pricing
+      .map((cat) => `
+        <tr style="border-bottom: 1px solid #eee;">
+          <td style="padding: 8px; font-weight: 500;">${cat.categoryLabel}</td>
+          <td style="text-align: center; padding: 8px;">$${cat.startFare}</td>
+          <td style="text-align: center; padding: 8px;">$${cat.perKmRate}</td>
+          <td style="text-align: center; padding: 8px;">$${cat.waitPerMinRate}</td>
+        </tr>
+      `)
+      .join("");
+  } catch (error) {
+    console.error("Error cargando tarifas:", error);
+    elements.pricingTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 16px;">Error cargando tarifas</td></tr>';
+  }
 }
 
 function updateRideUI() {
@@ -264,6 +291,7 @@ async function cancelRide() {
 
 async function init() {
   await loadCategories();
+  await loadPricing();
 
   elements.categorySelect.addEventListener("change", async (e) => {
     state.selectedCategory = e.target.value;

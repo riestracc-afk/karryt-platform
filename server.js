@@ -282,6 +282,18 @@ app.get("/api/services/:category", (req, res) => {
   res.json(services);
 });
 
+app.get("/api/pricing", (_req, res) => {
+  const pricing = Object.entries(categoryRateCard).map(([categoryKey, rates]) => ({
+    category: categoryKey,
+    categoryLabel: vehicleCategories[categoryKey]?.label || categoryKey,
+    startFare: rates.startFare,
+    perKmRate: rates.perKm,
+    waitPerMinRate: rates.waitPerMin,
+    currency: "MXN"
+  }));
+  res.json(pricing);
+});
+
 app.get("/api/quote", (req, res) => {
   const distance = Number(req.query.distance || randomTripDistance());
   const category = String(req.query.category || "pickup_mini");
