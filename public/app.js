@@ -1,4 +1,4 @@
-const socket = io();
+const socket = typeof window.io === "function" ? window.io() : null;
 
 const state = {
   currentRideId: null,
@@ -180,18 +180,20 @@ function renderDrivers(drivers) {
   });
 }
 
-socket.on("drivers:update", (drivers) => {
-  renderDrivers(drivers);
-});
+if (socket) {
+  socket.on("drivers:update", (drivers) => {
+    renderDrivers(drivers);
+  });
 
-socket.on("ride:update", (ride) => {
-  if (state.currentRideId && ride.id !== state.currentRideId) {
-    return;
-  }
+  socket.on("ride:update", (ride) => {
+    if (state.currentRideId && ride.id !== state.currentRideId) {
+      return;
+    }
 
-  state.currentRide = ride;
-  updateRideUI();
-});
+    state.currentRide = ride;
+    updateRideUI();
+  });
+}
 
 async function createRide(event) {
   event.preventDefault();
@@ -233,7 +235,9 @@ async function createRide(event) {
     const ride = await response.json();
     state.currentRideId = ride.id;
     state.currentRide = ride;
-    socket.emit("ride:watch", ride.id);
+    if (socket) {
+      socket.emit("ride:watch", ride.id);
+    }
     updateRideUI();
   } catch (error) {
     alert("Error solicitando carga. Intenta nuevamente.");
