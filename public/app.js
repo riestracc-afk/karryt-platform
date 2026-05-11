@@ -24,6 +24,8 @@ const state = {
   }
 };
 
+const TRIP_RULES_STORAGE_KEY = "karrit_trip_rules";
+
 const elements = {
   categorySelect: document.getElementById("categorySelect"),
   serviceSelect: document.getElementById("serviceSelect"),
@@ -84,6 +86,24 @@ const fallbackRateCard = {
 };
 
 async function loadTripRules() {
+  // Prioridad 1: configuración guardada por supervisor en este dispositivo
+  try {
+    const localRaw = window.localStorage.getItem(TRIP_RULES_STORAGE_KEY);
+    if (localRaw) {
+      const localRules = JSON.parse(localRaw);
+      state.tripRules = {
+        ...state.tripRules,
+        ...localRules,
+        municipalities: Array.isArray(localRules.municipalities)
+          ? localRules.municipalities.map((item) => normalizeText(item)).filter(Boolean)
+          : state.tripRules.municipalities
+      };
+    }
+  } catch (error) {
+    console.warn("No se pudo leer configuración local de reglas");
+  }
+
+  // Prioridad 2: backend API (si existe)
   try {
     const response = await fetch("/api/trip-rules");
     if (!response.ok) {
@@ -94,10 +114,14 @@ async function loadTripRules() {
     state.tripRules = {
       ...state.tripRules,
       ...rules,
-      municipalities: Array.isArray(rules.municipalities) ? rules.municipalities : state.tripRules.municipalities
+      municipalities: Array.isArray(rules.municipalities)
+        ? rules.municipalities.map((item) => normalizeText(item)).filter(Boolean)
+        : state.tripRules.municipalities
     };
+
+    window.localStorage.setItem(TRIP_RULES_STORAGE_KEY, JSON.stringify(state.tripRules));
   } catch (error) {
-    console.warn("No se pudieron cargar reglas de viaje. Se usan valores por defecto.");
+    console.warn("No se pudieron cargar reglas de viaje desde API. Se usan reglas locales/default.");
   }
 }
 
@@ -346,9 +370,20 @@ async function saveTripRules() {
       .filter(Boolean)
   };
 
+  // Guardado local inmediato para hosting estático
+  state.tripRules = {
+    ...state.tripRules,
+    ...payload,
+    municipalities: payload.municipalities.map((item) => normalizeText(item))
+  };
+
+  window.localStorage.setItem(TRIP_RULES_STORAGE_KEY, JSON.stringify(state.tripRules));
+  renderTripRulesTable();
+  refreshAutoServiceUI();
+
   elements.saveTripRulesBtn.disabled = true;
   if (elements.tripRulesStatus) {
-    elements.tripRulesStatus.textContent = "Guardando...";
+    elements.tripRulesStatus.textContent = "Guardado localmente. Sincronizando...";
   }
 
   try {
@@ -364,14 +399,15 @@ async function saveTripRules() {
     }
 
     state.tripRules = data.tripRules;
+    window.localStorage.setItem(TRIP_RULES_STORAGE_KEY, JSON.stringify(state.tripRules));
     renderTripRulesTable();
     refreshAutoServiceUI();
     if (elements.tripRulesStatus) {
-      elements.tripRulesStatus.textContent = "Configuración guardada";
+      elements.tripRulesStatus.textContent = "Configuración guardada y sincronizada";
     }
   } catch (error) {
     if (elements.tripRulesStatus) {
-      elements.tripRulesStatus.textContent = `Error: ${error.message}`;
+      elements.tripRulesStatus.textContent = "Configuración guardada localmente (API no disponible)";
     }
   } finally {
     elements.saveTripRulesBtn.disabled = false;
