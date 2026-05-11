@@ -1,29 +1,31 @@
-<svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
-  <!-- Motion lines -->
-  <line x1="20" y1="80" x2="40" y2="80" stroke="#ff6d00" stroke-width="6" stroke-linecap="round"/>
-  <line x1="20" y1="100" x2="40" y2="100" stroke="#ff6d00" stroke-width="6" stroke-linecap="round"/>
-  <line x1="20" y1="120" x2="40" y2="120" stroke="#ff6d00" stroke-width="6" stroke-linecap="round"/>
+<svg viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <style>
+      .karrit-text { font-family: Arial, sans-serif; font-size: 36px; font-weight: bold; }
+      .karrit-navy { fill: #003d7a; }
+      .karrit-orange { fill: #ff6d00; }
+    </style>
+  </defs>
   
-  <!-- Truck container outline -->
-  <path d="M 60 140 L 60 60 Q 60 50 70 50 L 280 50 Q 290 50 290 60 L 290 140" stroke="#003d7a" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Motion lines (left side) -->
+  <line x1="10" y1="40" x2="25" y2="40" stroke="#ff6d00" stroke-width="3" stroke-linecap="round"/>
+  <line x1="10" y1="50" x2="25" y2="50" stroke="#ff6d00" stroke-width="3" stroke-linecap="round"/>
+  <line x1="10" y1="60" x2="25" y2="60" stroke="#ff6d00" stroke-width="3" stroke-linecap="round"/>
   
-  <!-- Truck container bottom -->
-  <line x1="60" y1="140" x2="290" y2="140" stroke="#003d7a" stroke-width="8" stroke-linecap="round"/>
+  <!-- Truck body container -->
+  <rect x="30" y="35" width="110" height="50" rx="6" ry="6" fill="none" stroke="#003d7a" stroke-width="4"/>
   
-  <!-- Truck body (right side) -->
-  <path d="M 290 60 L 330 60 Q 340 60 340 70 L 340 130 Q 340 140 330 140 L 290 140" fill="#ff6d00"/>
+  <!-- Truck cabin (right side) -->
+  <rect x="140" y="35" width="35" height="50" rx="4" ry="4" fill="#ff6d00"/>
   
-  <!-- Wheels -->
-  <circle cx="100" cy="145" r="12" fill="none" stroke="#003d7a" stroke-width="4"/>
-  <circle cx="100" cy="145" r="7" fill="#003d7a"/>
-  <circle cx="260" cy="145" r="12" fill="none" stroke="#003d7a" stroke-width="4"/>
-  <circle cx="260" cy="145" r="7" fill="#003d7a"/>
-  <circle cx="315" cy="145" r="12" fill="none" stroke="#003d7a" stroke-width="4"/>
-  <circle cx="315" cy="145" r="7" fill="#003d7a"/>
+  <!-- Truck wheels -->
+  <circle cx="50" cy="90" r="6" fill="none" stroke="#003d7a" stroke-width="2.5"/>
+  <circle cx="50" cy="90" r="3.5" fill="#003d7a"/>
+  <circle cx="110" cy="90" r="6" fill="none" stroke="#003d7a" stroke-width="2.5"/>
+  <circle cx="110" cy="90" r="3.5" fill="#003d7a"/>
+  <circle cx="160" cy="90" r="6" fill="none" stroke="#003d7a" stroke-width="2.5"/>
+  <circle cx="160" cy="90" r="3.5" fill="#003d7a"/>
   
-  <!-- Text: Karry -->
-  <text x="155" y="110" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#003d7a" text-anchor="middle">Karry</text>
-  
-  <!-- Text: T (orange) -->
-  <text x="345" y="110" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#ff6d00" text-anchor="middle">T</text>
+  <!-- Text "KARRIT" -->
+  <text x="195" y="68" class="karrit-text karrit-navy">KARRIT</text>
 </svg>
