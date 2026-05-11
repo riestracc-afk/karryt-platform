@@ -1,4 +1,11 @@
-const socket = typeof window.io === "function" ? window.io() : null;
+let socket = null;
+try {
+  if (typeof window !== 'undefined' && typeof window.io === "function") {
+    socket = window.io();
+  }
+} catch (e) {
+  console.warn('Socket.IO no disponible:', e.message);
+}
 
 const state = {
   currentRideId: null,
