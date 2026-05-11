@@ -43,7 +43,7 @@ const dotMap = new Map();
 function formatCurrency(n) {
   return new Intl.NumberFormat("es-ES", {
     style: "currency",
-    currency: "EUR"
+    currency: "MXN"
   }).format(Number(n || 0));
 }
 
@@ -274,7 +274,7 @@ async function init() {
       elements.serviceSelect.innerHTML = '<option value="">Primero selecciona una categoría</option>';
       elements.serviceSelect.disabled = true;
     }
-    elements.fareEstimate.textContent = "EUR --.--";
+    elements.fareEstimate.textContent = "MXN --.--";
   });
 
   elements.rideForm.addEventListener("submit", createRide);

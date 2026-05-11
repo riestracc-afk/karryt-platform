@@ -142,7 +142,7 @@ Ejemplo: `GET /api/services/pickup_mini`
 
 ### Obtener cotización
 ```bash
-GET /api/quote?category=pickup_mini&service=local&distance=10
+GET /api/quote?category=pickup_mini&service=local&distance=10&waitMinutes=5
 ```
 
 ### Crear solicitud de carga
@@ -175,18 +175,21 @@ POST /api/rides/:id/cancel
 
 Las tarifas varían según:
 - **Categoría del vehículo** - Capacidad y especialización
-- **Tipo de servicio** - Nivel de cobertura
+- **Tipo de servicio** - Multiplicador de operación
 - **Distancia** - Kilómetros a recorrer
+- **Tiempo de espera** - Minutos de carga/descarga
 - **Demanda** - Factor dinámico según disponibilidad
 
-### Ejemplo de tarifas base (EUR)
+### Tarifas base activas por categoría (MXN)
 
-| Categoría | Servicio | Base | Por km |
-|-----------|----------|------|--------|
-| Pick-up Mini | Local | €8.50 | €1.20 |
-| Especializada 1.1T | Carga Frágil | €15.00 | €2.10 |
-| Camión 3T | Carga Estándar | €25.00 | €3.20 |
-| Volteo | Carga Granel | €45.00 | €5.50 |
+| Categoría | Tarifa de arranque | Por km | Espera por minuto |
+|-----------|--------------------|--------|-------------------|
+| Pick-up Mini | $150 | $18 | $4 |
+| Especializada 1.1T | $300 | $30 | $6 |
+| Camión 3T | $700 | $45 | $8 |
+| Camión de Volteo | $1500 | $75 | $12 |
+
+El endpoint de cotización devuelve la tarifa estimada en **MXN** y también los campos `startFare`, `perKmRate` y `waitPerMinRate` de la categoría seleccionada.
 
 ---
 

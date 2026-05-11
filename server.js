@@ -79,23 +79,47 @@ const vehicleCategories = {
   }
 };
 
-// Catálogo de servicios por categoría
+// Catálogo de servicios por categoría (valores de referencia altos, MXN)
 const serviceCatalog = {
   pickup_mini: {
-    local: { label: "Recorrido Local", baseFare: 8.5, perKm: 1.2, multiplier: 1 },
-    regional: { label: "Recorrido Regional", baseFare: 12.0, perKm: 1.8, multiplier: 1.15 }
+    local: { label: "Recorrido Local", multiplier: 1 },
+    regional: { label: "Recorrido Regional", multiplier: 1.05 }
   },
   specialized_1t: {
-    fragile: { label: "Carga Frágil", baseFare: 15.0, perKm: 2.1, multiplier: 1.35 },
-    structural: { label: "Carga Estructural", baseFare: 18.0, perKm: 2.4, multiplier: 1.2 }
+    fragile: { label: "Carga Frágil", multiplier: 1.02 },
+    structural: { label: "Carga Estructural", multiplier: 1.08 }
   },
   truck_3t: {
-    standard: { label: "Carga Estándar", baseFare: 25.0, perKm: 3.2, multiplier: 1.1 },
-    heavy: { label: "Carga Pesada", baseFare: 35.0, perKm: 4.5, multiplier: 1.3 }
+    standard: { label: "Carga Estándar", multiplier: 1.03 },
+    heavy: { label: "Carga Pesada", multiplier: 1.1 }
   },
   dump_truck: {
-    bulk: { label: "Carga a Granel", baseFare: 45.0, perKm: 5.5, multiplier: 1.25 },
-    specialized: { label: "Carga Especializada", baseFare: 55.0, perKm: 6.8, multiplier: 1.4 }
+    bulk: { label: "Carga a Granel", multiplier: 1.04 },
+    specialized: { label: "Carga Especializada", multiplier: 1.12 }
+  }
+};
+
+// Tarifas base por categoría usando el valor más alto definido por negocio (MXN)
+const categoryRateCard = {
+  pickup_mini: {
+    startFare: 150,
+    perKm: 18,
+    waitPerMin: 4
+  },
+  specialized_1t: {
+    startFare: 300,
+    perKm: 30,
+    waitPerMin: 6
+  },
+  truck_3t: {
+    startFare: 700,
+    perKm: 45,
+    waitPerMin: 8
+  },
+  dump_truck: {
+    startFare: 1500,
+    perKm: 75,
+    waitPerMin: 12
   }
 };
 
@@ -137,12 +161,21 @@ function randomTripDistance() {
   return Number((3 + Math.random() * 35).toFixed(1));
 }
 
-function estimateFare(distance, categoryKey, serviceKey) {
+function estimateFare(distance, categoryKey, serviceKey, waitMinutes = 0) {
   const services = serviceCatalog[categoryKey] || serviceCatalog.pickup_mini;
   const service = services[serviceKey] || Object.values(services)[0];
-  const demandFactor = 1 + Math.random() * 0.32;
-  const subtotal = service.baseFare + distance * service.perKm;
-  const total = subtotal * service.multiplier * demandFactor;
+  const rateCard = categoryRateCard[categoryKey] || categoryRateCard.pickup_mini;
+
+  const normalizedDistance = Math.max(0, Number(distance) || 0);
+  const normalizedWait = Math.max(0, Number(waitMinutes) || 0);
+  const demandFactor = 1 + Math.random() * 0.12;
+
+  const subtotal =
+    rateCard.startFare +
+    normalizedDistance * rateCard.perKm +
+    normalizedWait * rateCard.waitPerMin;
+
+  const total = subtotal * (service.multiplier ?? 1) * demandFactor;
   return Number(total.toFixed(2));
 }
 
@@ -253,19 +286,26 @@ app.get("/api/quote", (req, res) => {
   const distance = Number(req.query.distance || randomTripDistance());
   const category = String(req.query.category || "pickup_mini");
   const service = String(req.query.service || "local");
+  const waitMinutes = Number(req.query.waitMinutes || 0);
 
   const services = serviceCatalog[category];
   if (!services || !services[service]) {
     return res.status(400).json({ error: "Categoría o servicio inválido" });
   }
 
-  const fareEstimate = estimateFare(distance, category, service);
+  const fareEstimate = estimateFare(distance, category, service, waitMinutes);
+  const rateCard = categoryRateCard[category] || categoryRateCard.pickup_mini;
+
   return res.json({
     category,
     service,
     distance,
+    waitMinutes,
     fareEstimate,
-    currency: "EUR"
+    startFare: rateCard.startFare,
+    perKmRate: rateCard.perKm,
+    waitPerMinRate: rateCard.waitPerMin,
+    currency: "MXN"
   });
 });
 
