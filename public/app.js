@@ -56,17 +56,44 @@ async function loadCategories() {
   try {
     const response = await fetch("/api/categories");
     state.categories = await response.json();
-
-    elements.categorySelect.innerHTML = '<option value="">Selecciona una categoría...</option>';
-    Object.entries(state.categories).forEach(([key, cat]) => {
-      const option = document.createElement("option");
-      option.value = key;
-      option.textContent = `${cat.label} (${cat.capacity})`;
-      elements.categorySelect.appendChild(option);
-    });
   } catch (error) {
     console.error("Error cargando categorías:", error);
+    // Fallback: categorías hardcodeadas
+    state.categories = {
+      pickup_mini: {
+        id: "pickup_mini",
+        label: "Pick-up Mini",
+        capacity: "Hasta 800 kg",
+        description: "Vehículos compactos de carga ligera"
+      },
+      specialized_1t: {
+        id: "specialized_1t",
+        label: "Especializada 1.1T",
+        capacity: "Hasta 1.1 tonelada",
+        description: "Camionetas especializadas"
+      },
+      truck_3t: {
+        id: "truck_3t",
+        label: "Camión 3T",
+        capacity: "Hasta 3 toneladas",
+        description: "Camiones medianos"
+      },
+      dump_truck: {
+        id: "dump_truck",
+        label: "Camión de Volteo",
+        capacity: "Caja 6m³",
+        description: "Camiones para carga a granel"
+      }
+    };
   }
+
+  elements.categorySelect.innerHTML = '<option value="">Selecciona una categoría...</option>';
+  Object.entries(state.categories).forEach(([key, cat]) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = `${cat.label} (${cat.capacity})`;
+    elements.categorySelect.appendChild(option);
+  });
 }
 
 async function loadServices(categoryKey) {
@@ -83,6 +110,22 @@ async function loadServices(categoryKey) {
     });
   } catch (error) {
     console.error("Error cargando servicios:", error);
+    // Fallback: servicios por categoría
+    const defaultServices = {
+      pickup_mini: { local: { label: "Recorrido Local" }, regional: { label: "Recorrido Regional" } },
+      specialized_1t: { fragile: { label: "Carga Frágil" }, structural: { label: "Carga Estructural" } },
+      truck_3t: { standard: { label: "Carga Estándar" }, heavy: { label: "Carga Pesada" } },
+      dump_truck: { bulk: { label: "Carga a Granel" }, specialized: { label: "Carga Especializada" } }
+    };
+
+    const services = defaultServices[categoryKey] || {};
+    elements.serviceSelect.innerHTML = '<option value="">Selecciona un servicio...</option>';
+    Object.entries(services).forEach(([key, svc]) => {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = svc.label;
+      elements.serviceSelect.appendChild(option);
+    });
   }
 }
 
