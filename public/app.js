@@ -36,7 +36,22 @@ const elements = {
   rideStatusPill: document.getElementById("rideStatusPill"),
   tripProgressFill: document.getElementById("tripProgressFill"),
   progressPercent: document.getElementById("progressPercent"),
-  pricingTableBody: document.getElementById("pricingTableBody")
+  pricingTableBody: document.getElementById("pricingTableBody"),
+  pickupMap: document.getElementById("pickupMap"),
+  driverMap: document.getElementById("driverMap"),
+  pickupCoords: document.getElementById("pickupCoords")
+};
+
+const maps = {
+  pickup: null,
+  driver: null,
+  pickupMarker: null,
+  driverMarkers: []
+};
+
+const defaultLocation = {
+  lat: 25.6866,
+  lng: -100.3161
 };
 
 const statusLabel = {
@@ -325,6 +340,12 @@ function renderDrivers(drivers) {
   const available = drivers.filter((d) => d.available).length;
   elements.availableDrivers.textContent = `${available} conductores libres`;
 
+  // Update Leaflet driver map if available
+  if (window.L && maps.driver) {
+    updateDriverMarkers(drivers);
+  }
+
+  // Keep existing dot map rendering for fallback
   const existingIds = new Set(drivers.map((d) => d.id));
 
   dotMap.forEach((dot, id) => {
@@ -341,7 +362,9 @@ function renderDrivers(drivers) {
       dot = document.createElement("div");
       dot.className = "driver-dot";
       dot.title = `${driver.name} (${driver.category})`;
-      elements.mapSim.appendChild(dot);
+      if (elements.mapSim) {
+        elements.mapSim.appendChild(dot);
+      }
       dotMap.set(driver.id, dot);
     }
 
@@ -438,10 +461,144 @@ async function cancelRide() {
   updateRideUI();
 }
 
+function initializePickupMap() {
+  console.log("initializePickupMap called");
+  if (!elements.pickupMap || !window.L) {
+    console.warn("Leaflet o contenedor de mapa no disponible", { hasPickupMap: !!elements.pickupMap, hasL: !!window.L });
+    return;
+  }
+
+  console.log("Initializing pickup map...");
+  // Initialize pickup map centered in Monterrey (default location in Mexico)
+  maps.pickup = L.map("pickupMap", {
+    center: [defaultLocation.lat, defaultLocation.lng],
+    zoom: 13,
+    dragging: true,
+    scrollWheelZoom: true
+  });
+
+  console.log("Map created, adding tile layer...");
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(maps.pickup);
+
+  // Add click handler to select location
+  maps.pickup.on("click", (e) => {
+    const { lat, lng } = e.latlng;
+
+    // Remove existing marker
+    if (maps.pickupMarker) {
+      maps.pickup.removeLayer(maps.pickupMarker);
+    }
+
+    // Add new marker
+    maps.pickupMarker = L.marker([lat, lng], {
+      icon: L.icon({
+        iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+        shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      })
+    }).addTo(maps.pickup);
+
+    // Update pickup input and coordinates display
+    elements.pickupInput.value = `Ubicación: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    if (elements.pickupCoords) {
+      elements.pickupCoords.innerHTML = `<label>Coordenadas seleccionadas: <span>${lat.toFixed(6)}, ${lng.toFixed(6)}</span></label>`;
+    }
+
+    // Trigger refresh of auto service
+    refreshAutoServiceUI();
+  });
+
+  // Add initial marker at default location
+  console.log("Adding initial marker...");
+  maps.pickupMarker = L.marker([defaultLocation.lat, defaultLocation.lng]).addTo(maps.pickup);
+  elements.pickupInput.value = `Ubicación: ${defaultLocation.lat.toFixed(4)}, ${defaultLocation.lng.toFixed(4)}`;
+  if (elements.pickupCoords) {
+    elements.pickupCoords.innerHTML = `<label>Ubicación inicial: <span>${defaultLocation.lat.toFixed(6)}, ${defaultLocation.lng.toFixed(6)}</span></label>`;
+  }
+  
+  console.log("Pickup map initialized successfully!");
+}
+
+function initializeDriverMap() {
+  if (!elements.driverMap || !window.L) {
+    console.warn("Leaflet o contenedor de mapa de conductores no disponible");
+    return;
+  }
+
+  // Initialize driver map centered in Monterrey
+  maps.driver = L.map("driverMap", {
+    center: [defaultLocation.lat, defaultLocation.lng],
+    zoom: 13,
+    dragging: true,
+    scrollWheelZoom: true
+  });
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(maps.driver);
+}
+
+function updateDriverMarkers(drivers) {
+  if (!maps.driver) return;
+
+  // Clear existing markers
+  maps.driverMarkers.forEach(marker => maps.driver.removeLayer(marker));
+  maps.driverMarkers = [];
+
+  // Add driver markers
+  drivers.forEach(driver => {
+    const marker = L.marker([driver.lat, driver.lng], {
+      icon: L.icon({
+        iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+        shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      })
+    }).bindPopup(`<strong>${driver.name}</strong><br>${driver.vehicle.name}<br>⭐ ${driver.rating}`);
+
+    marker.addTo(maps.driver);
+    maps.driverMarkers.push(marker);
+  });
+}
+
+async function cancelRide() {
+  if (!state.currentRideId) {
+    return;
+  }
+
+  const response = await fetch(`/api/rides/${state.currentRideId}/cancel`, { method: "POST" });
+  if (!response.ok) {
+    alert("No se pudo cancelar la carga");
+    return;
+  }
+
+  const ride = await response.json();
+  state.currentRide = ride;
+  updateRideUI();
+}
+
 async function init() {
+  console.log("Initializing KARRIT...");
   await loadMetroZones();
   await loadCategories();
   await loadPricing();
+  
+  // Initialize Leaflet maps
+  console.log("About to initialize Leaflet maps...");
+  setTimeout(() => {
+    console.log("Delayed initialization of maps...");
+    initializePickupMap();
+    initializeDriverMap();
+  }, 100);
 
   elements.categorySelect.addEventListener("change", async (e) => {
     state.selectedCategory = e.target.value;
@@ -474,3 +631,30 @@ async function init() {
 }
 
 init();
+
+// Ensure maps are initialized even if init() hasn't completed
+if (document.readyState !== 'loading') {
+  // Document is already loaded, initialize maps immediately
+  setTimeout(() => {
+    console.log("Document ready state satisfied, ensuring maps initialized");
+    if (!maps.pickup && document.getElementById('pickupMap')) {
+      initializePickupMap();
+    }
+    if (!maps.driver && document.getElementById('driverMap')) {
+      initializeDriverMap();
+    }
+  }, 200);
+} else {
+  // Document is still loading
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOMContentLoaded fired, ensuring maps initialized");
+    setTimeout(() => {
+      if (!maps.pickup && document.getElementById('pickupMap')) {
+        initializePickupMap();
+      }
+      if (!maps.driver && document.getElementById('driverMap')) {
+        initializeDriverMap();
+      }
+    }, 100);
+  });
+}

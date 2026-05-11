@@ -10,6 +10,8 @@
       href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@300;400;500;700&display=swap"
       rel="stylesheet"
     />
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -104,14 +106,27 @@
 
         <article class="card map-card">
           <div class="card-header">
+            <h2>Ubicación de Recogida</h2>
+            <span class="meta">Toca el mapa para ajustar</span>
+          </div>
+
+          <div id="pickupMap" class="map-container"></div>
+          
+          <div class="location-info">
+            <label>
+              Coordenadas:
+              <span id="pickupCoords">19.4326, -99.1332</span>
+            </label>
+          </div>
+        </article>
+
+        <article class="card map-card">
+          <div class="card-header">
             <h2>Conductores Disponibles</h2>
             <span class="meta" id="availableDrivers">0 conductores libres</span>
           </div>
 
-          <div class="map-sim" id="mapSim">
-            <div class="city-ring"></div>
-            <div class="city-ring ring-two"></div>
-          </div>
+          <div id="driverMap" class="map-container"></div>
 
           <div class="driver-info" id="driverInfo">
             Esperando asignación de conductor...
@@ -139,6 +154,8 @@
         // No agregar el script para evitar errores
       }
     </script>
-    <script src="app.js?v=20260510-2" defer></script>
+    <!-- Leaflet JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="app.js?v=20260511-maps-init" defer></script>
   </body>
 </html>
