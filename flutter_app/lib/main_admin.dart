@@ -11,7 +11,7 @@ class KarrytAdminApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF0F4CFF);
+    const seed = Color(0xFF7C2D12);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Karryt Admin PC',

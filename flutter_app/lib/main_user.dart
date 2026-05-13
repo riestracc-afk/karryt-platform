@@ -11,7 +11,7 @@ class KarrytUserApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF0F4CFF);
+    const seed = Color(0xFF14532D);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Karryt Usuario',

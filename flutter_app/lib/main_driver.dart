@@ -11,7 +11,7 @@ class KarrytDriverApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF0F4CFF);
+    const seed = Color(0xFF1D4ED8);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Karryt Chofer',

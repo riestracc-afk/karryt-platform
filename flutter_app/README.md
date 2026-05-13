@@ -93,6 +93,12 @@ Rutas de produccion esperadas:
 - Chofer: `/chofer`
 - Admin PC: `/admin`
 
+Identidad visual separada por app (generada en build multi):
+
+- Usuario: titulo `Karryt Usuario`, color base verde, favicon `U`
+- Chofer: titulo `Karryt Chofer`, color base azul, favicon `C`
+- Admin PC: titulo `Karryt Admin PC`, color base cobre, favicon `A`
+
 ## Favoritos sincronizados
 
 Las direcciones favoritas se sincronizan con el backend en:
