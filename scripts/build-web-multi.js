@@ -67,7 +67,25 @@ function customizeWebOutput(outputDir, options) {
   }
 
   if (fs.existsSync(manifestPath)) {
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    let manifest;
+    const manifestRaw = fs.readFileSync(manifestPath, "utf8");
+    try {
+      manifest = JSON.parse(manifestRaw);
+    } catch (error) {
+      console.warn(`Manifest invalido en ${manifestPath}. Se regenera con valores por defecto: ${error.message}`);
+      manifest = {
+        name: title,
+        short_name: shortName,
+        start_url: ".",
+        display: "standalone",
+        background_color: backgroundColor,
+        theme_color: themeColor,
+        description,
+        orientation: "portrait-primary",
+        prefer_related_applications: false,
+        icons: []
+      };
+    }
     manifest.name = title;
     manifest.short_name = shortName;
     manifest.description = description;
