@@ -41,6 +41,151 @@ Future<void> main() async {
   runApp(const KarrytFlutterApp());
 }
 
+/// SnackBar con animación mejorada
+void showKarrytSnackBar(BuildContext context, String message,
+    {Duration duration = const Duration(seconds: 4)}) {
+  final snackBar = SnackBar(
+    content: Row(
+      children: [
+        const PulseAnimation(
+          child: Icon(Icons.check_circle, color: Colors.white),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(message),
+        ),
+      ],
+    ),
+    duration: duration,
+    behavior: SnackBarBehavior.floating,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    elevation: 8,
+  );
+  ScaffoldMessenger.of(context).showSnackBar(snackBar);
+}
+
+/// Chip button animado
+class AnimatedChip extends StatefulWidget {
+  const AnimatedChip({
+    super.key,
+    required this.label,
+    this.icon,
+    required this.onSelected,
+    this.selected = false,
+  });
+
+  final String label;
+  final IconData? icon;
+  final ValueChanged<bool> onSelected;
+  final bool selected;
+
+  @override
+  State<AnimatedChip> createState() => _AnimatedChipState();
+}
+
+class _AnimatedChipState extends State<AnimatedChip>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _colorAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _scaleAnimation = Tween<double>(begin: 1, end: 1.1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _colorAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    if (widget.selected) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(AnimatedChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selected != oldWidget.selected) {
+      if (widget.selected) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_scaleAnimation, _colorAnimation]),
+      builder: (context, _) {
+        return Transform.scale(
+          scale: _scaleAnimation.value,
+          child: FilterChip(
+            label: Text(widget.label),
+            avatar: widget.icon != null ? Icon(widget.icon) : null,
+            selected: widget.selected,
+            onSelected: (selected) {
+              widget.onSelected(selected);
+            },
+            backgroundColor: Colors.transparent,
+            selectedColor: Theme.of(context)
+                .colorScheme
+                .primary
+                .withAlpha((30 * _colorAnimation.value).toInt()),
+            shape: StadiumBorder(
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.primary,
+                width: 1.5,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Extensión para mostrar diálogos con animación
+extension ContextDialogExtension on BuildContext {
+  Future<T?> showAnimatedDialog<T>(
+    Widget Function(BuildContext) builder, {
+    bool barrierDismissible = true,
+  }) {
+    return showGeneralDialog<T>(
+      context: this,
+      barrierDismissible: barrierDismissible,
+      barrierLabel: 'Dialog',
+      barrierColor: Colors.black.withAlpha((0.5 * 255).toInt()),
+      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.8, end: 1).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+          ),
+          child: FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 300),
+    );
+  }
+}
+
+
 /// Botón de acción flotante mejorado con animación de escala
 class FloatingActionButtonPlus extends StatefulWidget {
   const FloatingActionButtonPlus({
