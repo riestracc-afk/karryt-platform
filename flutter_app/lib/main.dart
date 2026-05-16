@@ -402,6 +402,113 @@ class RideCardSkeleton extends StatelessWidget {
   }
 }
 
+/// Overlay loading animado con backdrop desenfocado
+class KarrytLoadingOverlay extends StatefulWidget {
+  const KarrytLoadingOverlay({
+    super.key,
+    required this.isLoading,
+    required this.child,
+    this.message,
+  });
+
+  final bool isLoading;
+  final Widget child;
+  final String? message;
+
+  @override
+  State<KarrytLoadingOverlay> createState() => _KarrytLoadingOverlayState();
+}
+
+class _KarrytLoadingOverlayState extends State<KarrytLoadingOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    if (widget.isLoading) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(KarrytLoadingOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isLoading && !oldWidget.isLoading) {
+      _controller.forward();
+    } else if (!widget.isLoading && oldWidget.isLoading) {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        widget.child,
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Visibility(
+              visible: _controller.value > 0,
+              child: Opacity(
+                opacity: _controller.value * 0.5,
+                child: Container(
+                  color: Colors.black,
+                  child: Center(
+                    child: Transform.scale(
+                      scale: 0.8 + (_controller.value * 0.2),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 60,
+                            height: 60,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              valueColor: AlwaysStoppedAnimation(
+                                Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          if (widget.message != null) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              widget.message!,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
 class WorkspaceShell extends StatefulWidget {
   const WorkspaceShell({super.key});
 
@@ -10136,42 +10243,46 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (_error != null) ...[
-                    Text(_error!, style: TextStyle(color: Colors.red.shade700)),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_success != null) ...[
-                    Text(_success!,
-                        style: TextStyle(color: Colors.green.shade700)),
-                    const SizedBox(height: 8),
-                  ],
-                  _buildAdminModuleMenu(),
-                  const SizedBox(height: 12),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    transitionBuilder: (child, animation) => FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0.1, 0),
-                          end: Offset.zero,
-                        ).animate(animation),
-                        child: child,
+      body: KarrytLoadingOverlay(
+        isLoading: _saving,
+        message: 'Guardando cambios...',
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (_error != null) ...[
+                      Text(_error!, style: TextStyle(color: Colors.red.shade700)),
+                      const SizedBox(height: 8),
+                    ],
+                    if (_success != null) ...[
+                      Text(_success!,
+                          style: TextStyle(color: Colors.green.shade700)),
+                      const SizedBox(height: 8),
+                    ],
+                    _buildAdminModuleMenu(),
+                    const SizedBox(height: 12),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0.1, 0),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
                       ),
+                      child: _buildModuleContent(),
                     ),
-                    child: _buildModuleContent(),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
-            ),
+      ),
           ),
         ),
       ),
