@@ -261,6 +261,147 @@ class _KarrytShortcutIntent extends Intent {
   final String command;
 }
 
+/// Premium skeleton loader con shimmer effect (sin dependencias extras)
+class KarrytSkeletonLoader extends StatefulWidget {
+  const KarrytSkeletonLoader({
+    super.key,
+    required this.child,
+    this.isLoading = true,
+    this.duration = const Duration(milliseconds: 1500),
+  });
+
+  final Widget child;
+  final bool isLoading;
+  final Duration duration;
+
+  @override
+  State<KarrytSkeletonLoader> createState() => _KarrytSkeletonLoaderState();
+}
+
+class _KarrytSkeletonLoaderState extends State<KarrytSkeletonLoader>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isLoading) {
+      return widget.child;
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Opacity(
+          opacity: 0.6 + (0.4 * (math.sin(_controller.value * math.pi * 2) + 1) / 2),
+          child: ShaderMask(
+            shaderCallback: (bounds) {
+              return LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Colors.grey.shade300,
+                  Colors.grey.shade100,
+                  Colors.grey.shade300,
+                ],
+                stops: [
+                  (_controller.value - 0.3).clamp(0, 1),
+                  _controller.value.clamp(0, 1),
+                  (_controller.value + 0.3).clamp(0, 1),
+                ],
+              ).createShader(bounds);
+            },
+            child: widget.child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Skeleton para tarjetas de viaje (fare cards)
+class RideCardSkeleton extends StatelessWidget {
+  const RideCardSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 1.5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 16,
+              width: 100,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 12,
+              width: 200,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  height: 12,
+                  width: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class WorkspaceShell extends StatefulWidget {
   const WorkspaceShell({super.key});
 
@@ -4632,6 +4773,110 @@ String requestTypeToLabel(String requestType) {
   }
 }
 
+/// Tarjeta métrica animada para Admin con hover effect y micro-animaciones
+class _AdminMetricCard extends StatefulWidget {
+  const _AdminMetricCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  State<_AdminMetricCard> createState() => _AdminMetricCardState();
+}
+
+class _AdminMetricCardState extends State<_AdminMetricCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _hoverController;
+
+  @override
+  void initState() {
+    super.initState();
+    _hoverController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+  }
+
+  @override
+  void dispose() {
+    _hoverController.dispose();
+    super.dispose();
+  }
+
+  void _onHoverChange(bool isHovered) {
+    _hoverController.animateTo(isHovered ? 1 : 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => _onHoverChange(true),
+      onExit: (_) => _onHoverChange(false),
+      child: AnimatedBuilder(
+        animation: _hoverController,
+        builder: (context, child) {
+          final scale = 1 + (_hoverController.value * 0.02);
+          final shadowOpacity = 0.05 + (_hoverController.value * 0.1);
+
+          return Transform.scale(
+            scale: scale,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: shadowOpacity),
+                    blurRadius: 10 + (_hoverController.value * 5),
+                    offset: Offset(0, 3 + (_hoverController.value * 2)),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: widget.color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(widget.icon, color: widget.color, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(widget.label,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(widget.value,
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
 
@@ -5244,48 +5489,11 @@ class _AdminScreenState extends State<AdminScreen> {
     required String value,
     required Color color,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800)),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return _AdminMetricCard(
+      icon: icon,
+      label: label,
+      value: value,
+      color: color,
     );
   }
 
@@ -10077,7 +10285,18 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
             const SizedBox(height: 12),
             if (_loadingRides)
-              const LinearProgressIndicator()
+              KarrytSkeletonLoader(
+                isLoading: true,
+                child: Column(
+                  children: [
+                    const RideCardSkeleton(),
+                    const SizedBox(height: 8),
+                    const RideCardSkeleton(),
+                    const SizedBox(height: 8),
+                    const RideCardSkeleton(),
+                  ],
+                ),
+              )
             else if (rides.isEmpty)
               KarrytEmptyState(
                 icon: Icons.delivery_dining_outlined,
