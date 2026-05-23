@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "502814108153",
+    "project_id": "project-404e35e2-6a5d-421b-970",
+    "storage_bucket": "project-404e35e2-6a5d-421b-970.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:502814108153:android:d309fa23afe6c29dc5f528",
+        "android_client_info": {
+          "package_name": "com.example.karryt_flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBfz3_z3SxdeYDBCwDz2jFZxrVhaXfd3Q4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
