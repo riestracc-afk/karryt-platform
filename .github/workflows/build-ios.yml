@@ -1,0 +1,82 @@
+name: Build iOS IPAs
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Notas de la versión"
+        default: "Nueva versión iOS"
+        required: false
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: flutter_app
+        run: flutter pub get
+
+      # ── Build Chofer ──────────────────────────────────────────────────────
+      - name: Build IPA Chofer (sin firma)
+        working-directory: flutter_app
+        run: |
+          flutter build ipa --no-codesign \
+            -t lib/main_driver.dart \
+            --release \
+            --dart-define=FIREBASE_PROJECT_ID=project-404e35e2-6a5d-421b-970 \
+            --dart-define=FIREBASE_API_KEY=AIzaSyBfz3_z3SxdeYDBCwDz2jFZxrVhaXfd3Q4 \
+            "--dart-define=FIREBASE_APP_ID=1:502814108153:android:d309fa23afe6c29dc5f528" \
+            "--dart-define=FIREBASE_MESSAGING_SENDER_ID=502814108153" \
+            "--dart-define=FIREBASE_STORAGE_BUCKET=project-404e35e2-6a5d-421b-970.firebasestorage.app"
+
+      - name: Empaquetar IPA Chofer
+        run: |
+          mkdir -p /tmp/payload-chofer/Payload
+          cp -r flutter_app/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app \
+                /tmp/payload-chofer/Payload/
+          cd /tmp/payload-chofer
+          zip -r karryt-chofer-ios.ipa Payload/
+          echo "IPA Chofer: $(du -sh karryt-chofer-ios.ipa | cut -f1)"
+
+      # ── Build Usuario ─────────────────────────────────────────────────────
+      - name: Build IPA Usuario (sin firma)
+        working-directory: flutter_app
+        run: |
+          flutter build ipa --no-codesign \
+            -t lib/main_user.dart \
+            --release \
+            --dart-define=FIREBASE_PROJECT_ID=project-404e35e2-6a5d-421b-970 \
+            --dart-define=FIREBASE_API_KEY=AIzaSyBfz3_z3SxdeYDBCwDz2jFZxrVhaXfd3Q4 \
+            "--dart-define=FIREBASE_APP_ID=1:502814108153:android:d309fa23afe6c29dc5f528" \
+            "--dart-define=FIREBASE_MESSAGING_SENDER_ID=502814108153" \
+            "--dart-define=FIREBASE_STORAGE_BUCKET=project-404e35e2-6a5d-421b-970.firebasestorage.app"
+
+      - name: Empaquetar IPA Usuario
+        run: |
+          mkdir -p /tmp/payload-usuario/Payload
+          cp -r flutter_app/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app \
+                /tmp/payload-usuario/Payload/
+          cd /tmp/payload-usuario
+          zip -r karryt-usuario-ios.ipa Payload/
+          echo "IPA Usuario: $(du -sh karryt-usuario-ios.ipa | cut -f1)"
+
+      # ── Subir artefactos ─────────────────────────────────────────────────
+      - name: Subir IPAs como artefactos
+        uses: actions/upload-artifact@v4
+        with:
+          name: karryt-ios-ipas
+          path: |
+            /tmp/payload-chofer/karryt-chofer-ios.ipa
+            /tmp/payload-usuario/karryt-usuario-ios.ipa
+          retention-days: 14

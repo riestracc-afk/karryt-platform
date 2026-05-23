@@ -1,0 +1,12 @@
+node_modules/
+flutter_app/
+logo/
+scripts/
+*.md
+*.sh
+*.ps1
+*.txt
+.git/
+.env
+.env.*
+!.env.example
