@@ -2033,8 +2033,8 @@ class _RideScreenState extends State<RideScreen> {
   bool _searchingDropoff = false;
   DateTime? _scheduledAt;
   String _rideRequestType = 'urgent';
-  bool _notifyOfflineByWhatsApp = true;
-  bool _notifyOfflineBySms = false;
+  final bool _notifyOfflineByWhatsApp = true;
+  final bool _notifyOfflineBySms = false;
   String? _locationStatus;
   String? _routeStatus;
   bool _routeLoading = false;
@@ -12757,12 +12757,12 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.speed_outlined, size: 22,
+                Icon(Icons.speed_outlined, size: 22,
                     color: Color(0xFF1D4ED8)),
-                const SizedBox(width: 8),
-                const Expanded(
+                SizedBox(width: 8),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -12989,7 +12989,7 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                         Switch(
                           value: _etaSurgeEnabled,
-                          activeColor: const Color(0xFFD97706),
+                          activeThumbColor: const Color(0xFFD97706),
                           onChanged: (val) =>
                               setState(() => _etaSurgeEnabled = val),
                         ),
@@ -13281,6 +13281,8 @@ class _DriverScreenState extends State<DriverScreen> {
   late final ApiClient _apiClient;
   Timer? _autoRefresh;
   StreamSubscription<String>? _pushTokenRefreshSubscription;
+  StreamSubscription<RemoteMessage>? _fcmForegroundSubscription;
+  StreamSubscription<RemoteMessage>? _fcmOpenedAppSubscription;
 
   static const String _scheduledWindowPrefsKey = 'driver.scheduledWindowHours';
   static const String _driverSessionIdPrefsKey = 'driver.session.id';
@@ -13370,6 +13372,8 @@ class _DriverScreenState extends State<DriverScreen> {
   void dispose() {
     _autoRefresh?.cancel();
     _pushTokenRefreshSubscription?.cancel();
+    _fcmForegroundSubscription?.cancel();
+    _fcmOpenedAppSubscription?.cancel();
     _customWindowController.dispose();
     super.dispose();
   }
@@ -13393,6 +13397,24 @@ class _DriverScreenState extends State<DriverScreen> {
         }
         _cachedAutoPushToken = normalized;
         unawaited(_registerDriverPushTokenIfAvailable());
+      });
+
+      // Mensajes FCM recibidos con la app en primer plano.
+      _fcmForegroundSubscription?.cancel();
+      _fcmForegroundSubscription =
+          FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        if (!mounted) return;
+        // Recarga inmediata de viajes para mostrar la nueva oferta
+        // sin esperar el siguiente tick del Timer de 5 segundos.
+        _loadRides();
+      });
+
+      // El usuario tocó una notificación FCM mientras la app estaba en segundo plano.
+      _fcmOpenedAppSubscription?.cancel();
+      _fcmOpenedAppSubscription =
+          FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        if (!mounted) return;
+        _loadRides();
       });
     } catch (_) {
       // Si Firebase no esta configurado, se omite registro automatico.
