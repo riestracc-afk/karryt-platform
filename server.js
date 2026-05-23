@@ -20,6 +20,10 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
+const NODE_ENV = String(process.env.NODE_ENV || "development").toLowerCase();
+const AUTH_ENFORCE_ROLES = parseBooleanEnv(process.env.AUTH_ENFORCE_ROLES, NODE_ENV === "production");
+const AUTH_ALLOW_DEV_HEADERS = parseBooleanEnv(process.env.AUTH_ALLOW_DEV_HEADERS, NODE_ENV !== "production");
+const AUTH_DEV_SHARED_KEY = String(process.env.AUTH_DEV_SHARED_KEY || "").trim();
 const DEFAULT_SCHEDULED_VISIBILITY_WINDOW_HOURS = Number.isFinite(Number(process.env.SCHEDULED_VISIBILITY_WINDOW_HOURS))
   ? Math.max(1, Number(process.env.SCHEDULED_VISIBILITY_WINDOW_HOURS))
   : 24;
@@ -61,7 +65,7 @@ const NOMINATIM_USER_AGENT =
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Karryt-Role, X-Karryt-User-Id, X-Karryt-Auth-Key");
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
@@ -85,6 +89,204 @@ app.get("/api/health", (_req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+function parseBooleanEnv(value, defaultValue = false) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return defaultValue;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return defaultValue;
+}
+
+function normalizeAuthRole(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "admin") {
+    return "admin";
+  }
+  if (["driver", "chofer"].includes(normalized)) {
+    return "driver";
+  }
+  if (["customer", "user", "usuario", "rider"].includes(normalized)) {
+    return "customer";
+  }
+  return "guest";
+}
+
+function extractBearerToken(req) {
+  const authHeader = String(req.headers.authorization || "");
+  if (!authHeader) {
+    return "";
+  }
+
+  const [scheme, token] = authHeader.split(" ");
+  if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
+    return "";
+  }
+
+  return token.trim();
+}
+
+function resolveRoleFromClaims(decodedToken) {
+  if (!decodedToken || typeof decodedToken !== "object") {
+    return "guest";
+  }
+
+  const roleCandidates = [];
+  if (decodedToken.role) {
+    roleCandidates.push(decodedToken.role);
+  }
+  if (decodedToken.karrytRole) {
+    roleCandidates.push(decodedToken.karrytRole);
+  }
+  if (Array.isArray(decodedToken.roles)) {
+    roleCandidates.push(...decodedToken.roles);
+  }
+  if (decodedToken.admin === true) {
+    roleCandidates.push("admin");
+  }
+
+  for (const candidate of roleCandidates) {
+    const normalized = normalizeAuthRole(candidate);
+    if (normalized !== "guest") {
+      return normalized;
+    }
+  }
+
+  return "customer";
+}
+
+function hasFirebaseAuthReady() {
+  return Boolean(firebaseAdmin && Array.isArray(firebaseAdmin.apps) && firebaseAdmin.apps.length > 0 && typeof firebaseAdmin.auth === "function");
+}
+
+function getAuthContext(req) {
+  if (!req.auth || typeof req.auth !== "object") {
+    return {
+      authenticated: false,
+      role: "guest",
+      userId: "",
+      provider: null,
+      claims: {}
+    };
+  }
+  return req.auth;
+}
+
+function isAdminAuth(req) {
+  const auth = getAuthContext(req);
+  return auth.authenticated === true && auth.role === "admin";
+}
+
+function enforceSelfOrAdmin(req, res, { role, actorId, actorLabel }) {
+  if (!AUTH_ENFORCE_ROLES) {
+    return true;
+  }
+
+  if (isAdminAuth(req)) {
+    return true;
+  }
+
+  const auth = getAuthContext(req);
+  if (!auth.authenticated) {
+    res.status(401).json({ error: "Autenticacion requerida" });
+    return false;
+  }
+
+  if (auth.role !== role) {
+    res.status(403).json({ error: `Permisos insuficientes para ${actorLabel}` });
+    return false;
+  }
+
+  const normalizedActorId = String(actorId || "").trim();
+  if (!normalizedActorId || String(auth.userId || "").trim() !== normalizedActorId) {
+    res.status(403).json({ error: `Solo puedes operar como ${actorLabel} autenticado` });
+    return false;
+  }
+
+  return true;
+}
+
+async function authenticateRequest(req, _res, next) {
+  req.auth = {
+    authenticated: false,
+    role: "guest",
+    userId: "",
+    provider: null,
+    claims: {}
+  };
+
+  const bearerToken = extractBearerToken(req);
+  if (bearerToken && hasFirebaseAuthReady()) {
+    try {
+      const decoded = await firebaseAdmin.auth().verifyIdToken(bearerToken);
+      req.auth = {
+        authenticated: true,
+        role: resolveRoleFromClaims(decoded),
+        userId: String(decoded.karrytUserId || decoded.uid || "").trim(),
+        uid: String(decoded.uid || "").trim(),
+        provider: "firebase",
+        claims: decoded
+      };
+    } catch (_error) {
+      req.auth = {
+        authenticated: false,
+        role: "guest",
+        userId: "",
+        provider: null,
+        claims: {}
+      };
+    }
+  }
+
+  if (!req.auth.authenticated && AUTH_ALLOW_DEV_HEADERS) {
+    const role = normalizeAuthRole(req.headers["x-karryt-role"]);
+    const userId = String(req.headers["x-karryt-user-id"] || "").trim();
+    if (role !== "guest" && userId) {
+      const providedKey = String(req.headers["x-karryt-auth-key"] || "").trim();
+      if (!AUTH_DEV_SHARED_KEY || AUTH_DEV_SHARED_KEY === providedKey) {
+        req.auth = {
+          authenticated: true,
+          role,
+          userId,
+          uid: userId,
+          provider: "dev-header",
+          claims: {}
+        };
+      }
+    }
+  }
+
+  next();
+}
+
+function requireAnyRole(...roles) {
+  const allowed = new Set(roles.map((role) => normalizeAuthRole(role)).filter((role) => role !== "guest"));
+  return (req, res, next) => {
+    if (!AUTH_ENFORCE_ROLES) {
+      return next();
+    }
+
+    const auth = getAuthContext(req);
+    if (!auth.authenticated) {
+      return res.status(401).json({ error: "Autenticacion requerida" });
+    }
+
+    if (!allowed.has(auth.role)) {
+      return res.status(403).json({ error: "Permisos insuficientes" });
+    }
+
+    return next();
+  };
+}
+
+app.use(authenticateRequest);
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -2753,9 +2955,27 @@ function findCustomerByPhone(phone) {
   return adminCustomers.find((item) => item.phone === normalizedPhone) || null;
 }
 
-function ensureCustomerRecord({ fullName, phone }) {
+function ensureCustomerRecord({ id, fullName, phone }) {
+  const normalizedId = String(id || "").trim();
   const normalizedPhone = String(phone || "").replace(/\D/g, "").trim();
   const normalizedName = String(fullName || "").trim() || "Cliente";
+
+  if (normalizedId) {
+    const byId = adminCustomers.find((item) => item.id === normalizedId);
+    if (byId) {
+      const mergedById = normalizeCustomerRecord({
+        ...byId,
+        fullName: normalizedName || byId.fullName,
+        phone: normalizedPhone || byId.phone,
+        updatedAt: new Date().toISOString()
+      }, { existingId: normalizedId });
+      adminCustomers = saveAdminCustomers(
+        adminCustomers.map((item) => (item.id === normalizedId ? mergedById : item))
+      );
+      applyCustomerRatingSummary(mergedById);
+      return mergedById;
+    }
+  }
 
   const existing = findCustomerByPhone(normalizedPhone);
   if (existing) {
@@ -2773,6 +2993,7 @@ function ensureCustomerRecord({ fullName, phone }) {
   }
 
   const created = normalizeCustomerRecord({
+    id: normalizedId,
     fullName: normalizedName,
     phone: normalizedPhone,
     active: true,
@@ -2983,10 +3204,17 @@ app.get("/api/drivers/:id/ratings", (req, res) => {
   });
 });
 
+app.use("/api/admin", requireAnyRole("admin"));
+app.use("/api/driver", requireAnyRole("driver", "admin"));
+
 app.get("/api/driver/ratings", (req, res) => {
   const driverId = String(req.query.driverId || "").trim();
   if (!driverId) {
     return res.status(400).json({ error: "driverId es requerido" });
+  }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
   }
 
   const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 30));
@@ -3016,6 +3244,10 @@ app.post("/api/driver/ratings/:id/reply", (req, res) => {
 
   if (!driverId) {
     return res.status(400).json({ error: "driverId es requerido" });
+  }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
   }
 
   if (!responseText) {
@@ -4281,7 +4513,12 @@ app.post("/api/rides", (req, res) => {
   }
 
   const customerPayload = customer && typeof customer === "object" ? customer : {};
+  const auth = getAuthContext(req);
+  const authenticatedCustomerId = auth.authenticated && auth.role === "customer"
+    ? String(auth.userId || "").trim()
+    : "";
   const customerRecord = ensureCustomerRecord({
+    id: authenticatedCustomerId || customerPayload.id,
     fullName: customerPayload.fullName || customerPayload.name,
     phone: customerPayload.phone
   });
@@ -4337,6 +4574,27 @@ app.get("/api/rides/:id", (req, res) => {
     return res.status(404).json({ error: "Solicitud de carga no encontrada" });
   }
 
+  if (AUTH_ENFORCE_ROLES) {
+    const auth = getAuthContext(req);
+    if (!auth.authenticated) {
+      return res.status(401).json({ error: "Autenticacion requerida" });
+    }
+
+    if (!isAdminAuth(req)) {
+      if (auth.role === "driver") {
+        if (!ride.driver?.id || ride.driver.id !== auth.userId) {
+          return res.status(403).json({ error: "Solo el chofer asignado puede consultar este viaje" });
+        }
+      } else if (auth.role === "customer") {
+        if (!ride.customer?.id || ride.customer.id !== auth.userId) {
+          return res.status(403).json({ error: "Solo el cliente del viaje puede consultarlo" });
+        }
+      } else {
+        return res.status(403).json({ error: "Permisos insuficientes" });
+      }
+    }
+  }
+
   return res.json(serializeRide(ride));
 });
 
@@ -4349,6 +4607,10 @@ app.post("/api/rides/:id/cancel", (req, res) => {
 
   if (["completed", "cancelled"].includes(ride.status)) {
     return res.status(409).json({ error: "No se puede cancelar en este estado" });
+  }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "customer", actorId: ride.customer?.id, actorLabel: "cliente" })) {
+    return;
   }
 
   ride.status = "cancelled";
@@ -4369,6 +4631,97 @@ app.post("/api/rides/:id/cancel", (req, res) => {
   return res.json(serializeRide(ride));
 });
 
+// Eliminar registro de viaje (solo cancelados/completados)
+app.delete("/api/rides/:id", (req, res) => {
+  const ride = rides.get(req.params.id);
+
+  if (!ride) {
+    return res.status(404).json({ error: "Solicitud de carga no encontrada" });
+  }
+
+  if (!["cancelled", "completed"].includes(ride.status)) {
+    return res.status(409).json({ error: "Solo puedes eliminar viajes cancelados o completados" });
+  }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "customer", actorId: ride.customer?.id, actorLabel: "cliente" })) {
+    return;
+  }
+
+  rides.delete(req.params.id);
+  return res.json({ success: true, id: req.params.id });
+});
+
+// Modo prueba: simula que un chofer acepta el primer viaje en búsqueda
+app.post("/api/test/simulate-driver", (req, res) => {
+  // Solo permitido en modo no-producción o por admin
+  if (process.env.NODE_ENV === "production" && !isAdminAuth(req)) {
+    return res.status(403).json({ error: "Modo prueba solo disponible para administradores en producción" });
+  }
+
+  const targetRideId = String(req.body?.rideId || "").trim();
+
+  // Buscar primer viaje disponible
+  const candidate = targetRideId
+    ? rides.get(targetRideId)
+    : [...rides.values()].find((r) => ["searching", "pending_driver"].includes(r.status));
+
+  if (!candidate) {
+    return res.status(404).json({ error: "No hay solicitudes de carga en espera" });
+  }
+
+  if (!["searching", "pending_driver"].includes(candidate.status)) {
+    return res.status(409).json({ error: "El viaje seleccionado no está en estado de búsqueda" });
+  }
+
+  // Buscar o crear chofer de prueba con la categoría correcta
+  let testDriver = drivers.find((d) => d.id === "TEST-DRIVER-001" && d.available);
+  if (!testDriver) {
+    testDriver = drivers.find((d) => d.category === candidate.category && d.available);
+  }
+  if (!testDriver) {
+    // Crear chofer simulado temporal
+    const fakeDriver = {
+      id: `TEST-DRV-${Date.now()}`,
+      name: "Chofer Demo (Prueba)",
+      category: candidate.category,
+      available: false,
+      rating: 4.8,
+      ratingCount: 12,
+      completedRides: 34,
+      vehicle: { plate: "DEMO-001", model: "Vehículo Demo", color: "Azul" },
+      lat: (candidate.pickupPoint?.lat ?? 25.6866) + (Math.random() - 0.5) * 0.02,
+      lng: (candidate.pickupPoint?.lng ?? -100.3161) + (Math.random() - 0.5) * 0.02,
+      _isTestDriver: true,
+    };
+    drivers.push(fakeDriver);
+    testDriver = fakeDriver;
+  }
+
+  testDriver.available = false;
+  candidate.driver = {
+    id: testDriver.id,
+    name: testDriver.name,
+    rating: testDriver.rating,
+    ratingCount: testDriver.ratingCount || 0,
+    vehicle: testDriver.vehicle,
+    completedRides: testDriver.completedRides,
+  };
+  candidate.status = "accepted";
+  candidate.assignmentState = "assigned";
+  candidate.progress = Math.max(candidate.progress, 0.08);
+  candidate.etaMin = etaMinutes(testDriver, candidate.pickupPoint || cityCenter);
+  appendTimeline(candidate, `[DEMO] Conductor acepto el viaje: ${testDriver.name}`);
+
+  broadcastRide(candidate);
+  broadcastDrivers();
+
+  return res.json({
+    success: true,
+    ride: serializeRide(candidate),
+    driver: { id: testDriver.id, name: testDriver.name },
+  });
+});
+
 app.post("/api/driver/devices/register", (req, res) => {
   const driverId = String(req.body?.driverId || "").trim();
   const token = String(req.body?.token || "").trim();
@@ -4377,6 +4730,10 @@ app.post("/api/driver/devices/register", (req, res) => {
 
   if (!driverId) {
     return res.status(400).json({ error: "driverId es requerido" });
+  }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
   }
 
   if (!token) {
@@ -4409,6 +4766,10 @@ app.get("/api/driver/account-statement", (req, res) => {
     return res.status(400).json({ error: "driverId es requerido" });
   }
 
+  if (!enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
+  }
+
   const driver = drivers.find((item) => item.id === driverId) || adminDrivers.find((item) => item.id === driverId);
   if (!driver) {
     return res.status(404).json({ error: "Chofer no encontrado" });
@@ -4436,6 +4797,10 @@ app.get("/api/driver/account-statement.csv", (req, res) => {
   const driverId = String(req.query.driverId || "").trim();
   if (!driverId) {
     return res.status(400).json({ error: "driverId es requerido" });
+  }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
   }
 
   const driver = drivers.find((item) => item.id === driverId) || adminDrivers.find((item) => item.id === driverId);
@@ -4482,6 +4847,10 @@ app.get("/api/driver/rides", (req, res) => {
   const scheduledWindowEndMs = nowMs + scheduledWindowHours * 60 * 60 * 1000;
   const activeStatuses = new Set(["scheduled", "searching", "pending_driver", "accepted", "driver_arriving", "in_progress"]);
   const selectedDriver = driverId ? drivers.find((item) => item.id === driverId) : null;
+
+  if (driverId && !enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
+  }
 
   const list = [...rides.values()]
     .filter((ride) => {
@@ -4542,6 +4911,10 @@ app.post("/api/driver/rides/:id/status", (req, res) => {
 
   if (!driverId) {
     return res.status(400).json({ error: "driverId es requerido" });
+  }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
   }
 
   if (["completed", "cancelled"].includes(ride.status)) {
@@ -4685,6 +5058,10 @@ app.post("/api/driver/rides/:id/customer-rating", (req, res) => {
     return res.status(404).json({ error: "Solicitud de carga no encontrada" });
   }
 
+  if (!enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
+  }
+
   if (ride.status !== "completed") {
     return res.status(409).json({ error: "Solo puedes calificar clientes en viajes completados" });
   }
@@ -4780,6 +5157,10 @@ app.post("/api/driver/incidents", (req, res) => {
   if (!driverId) {
     return res.status(400).json({ error: "driverId es requerido" });
   }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "driver", actorId: driverId, actorLabel: "chofer" })) {
+    return;
+  }
   if (!subjectType || !subjectId || !category || !title) {
     return res.status(400).json({ error: "subjectType, subjectId, category y title son requeridos" });
   }
@@ -4815,6 +5196,10 @@ app.post("/api/rides/:id/rating", (req, res) => {
 
   if (!ride.driver?.id) {
     return res.status(409).json({ error: "Este viaje no tiene conductor asignado" });
+  }
+
+  if (!enforceSelfOrAdmin(req, res, { role: "customer", actorId: ride.customer?.id, actorLabel: "cliente" })) {
+    return;
   }
 
   const existing = driverRatings.find((entry) => entry.rideId === ride.id);

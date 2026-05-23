@@ -27,6 +27,36 @@ La app apunta por defecto a:
 Si necesitas otro host, usa:
 - `flutter run --dart-define=API_BASE_URL=http://TU_IP:3000`
 
+## Auth por rol en cliente Flutter
+
+El cliente ahora envia automaticamente headers de identidad por rol para consumir endpoints protegidos:
+- `X-Karryt-Role`
+- `X-Karryt-User-Id`
+- `X-Karryt-Auth-Key` (opcional)
+- `Authorization: Bearer <token>` (opcional)
+
+Puedes configurarlo con `--dart-define`:
+- `KARRYT_USER_ID` para app Usuario
+- `KARRYT_DRIVER_ID` para app Chofer
+- `KARRYT_ADMIN_ID` para app Admin
+- `AUTH_DEV_SHARED_KEY` si el backend requiere llave compartida de desarrollo
+- `KARRYT_AUTH_BEARER` si quieres enviar token Bearer
+
+Ejemplos:
+- Usuario:
+   - `flutter run -d chrome -t lib/main_user.dart --dart-define=KARRYT_USER_ID=USR-1000 --dart-define=AUTH_DEV_SHARED_KEY=tu_llave`
+- Chofer:
+   - `flutter run -d chrome -t lib/main_driver.dart --dart-define=KARRYT_DRIVER_ID=DRV-1000 --dart-define=AUTH_DEV_SHARED_KEY=tu_llave`
+- Admin:
+   - `flutter run -d chrome -t lib/main_admin.dart --dart-define=KARRYT_ADMIN_ID=ADM-1000 --dart-define=AUTH_DEV_SHARED_KEY=tu_llave`
+
+## Sesion persistente (Usuario y Chofer)
+
+- Se retiro el acceso biometrico para Usuario y Chofer.
+- La app mantiene sesion iniciada por dispositivo para acceso rapido.
+- Usuario guarda un identificador local persistente y lo reutiliza en aperturas posteriores.
+- Chofer guarda el conductor seleccionado y lo restaura automaticamente al abrir de nuevo.
+
 ## Alcance migrado
 
 - Carga de categorias y servicios

@@ -5,10 +5,106 @@ import 'package:http/http.dart' as http;
 import 'geocoding_client.dart';
 import '../domain/models.dart';
 
+class ApiAuthContext {
+  const ApiAuthContext({
+    required this.role,
+    required this.userId,
+    this.bearerToken,
+    this.devAuthKey,
+  });
+
+  const ApiAuthContext.admin({
+    required String userId,
+    String? bearerToken,
+    String? devAuthKey,
+  }) : this(
+          role: 'admin',
+          userId: userId,
+          bearerToken: bearerToken,
+          devAuthKey: devAuthKey,
+        );
+
+  const ApiAuthContext.driver({
+    required String userId,
+    String? bearerToken,
+    String? devAuthKey,
+  }) : this(
+          role: 'driver',
+          userId: userId,
+          bearerToken: bearerToken,
+          devAuthKey: devAuthKey,
+        );
+
+  const ApiAuthContext.customer({
+    required String userId,
+    String? bearerToken,
+    String? devAuthKey,
+  }) : this(
+          role: 'customer',
+          userId: userId,
+          bearerToken: bearerToken,
+          devAuthKey: devAuthKey,
+        );
+
+  final String role;
+  final String userId;
+  final String? bearerToken;
+  final String? devAuthKey;
+}
+
+class _AuthHttpClient extends http.BaseClient {
+  _AuthHttpClient({ApiAuthContext? authContext}) : _authContext = authContext;
+
+  final http.Client _inner = http.Client();
+  ApiAuthContext? _authContext;
+
+  void setAuthContext(ApiAuthContext? value) {
+    _authContext = value;
+  }
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    final auth = _authContext;
+    if (auth != null) {
+      final role = auth.role.trim();
+      final userId = auth.userId.trim();
+      final bearer = (auth.bearerToken ?? '').trim();
+      final devKey = (auth.devAuthKey ?? '').trim();
+
+      if (role.isNotEmpty) {
+        request.headers.putIfAbsent('X-Karryt-Role', () => role);
+      }
+      if (userId.isNotEmpty) {
+        request.headers.putIfAbsent('X-Karryt-User-Id', () => userId);
+      }
+      if (devKey.isNotEmpty) {
+        request.headers.putIfAbsent('X-Karryt-Auth-Key', () => devKey);
+      }
+      if (bearer.isNotEmpty) {
+        request.headers.putIfAbsent('Authorization', () => 'Bearer $bearer');
+      }
+    }
+
+    return _inner.send(request);
+  }
+
+  @override
+  void close() {
+    _inner.close();
+    super.close();
+  }
+}
+
 class ApiClient {
-  ApiClient(this.baseUrl);
+  ApiClient(this.baseUrl, {ApiAuthContext? authContext})
+      : _client = _AuthHttpClient(authContext: authContext);
 
   final String baseUrl;
+  final _AuthHttpClient _client;
+
+  void setAuthContext(ApiAuthContext? authContext) {
+    _client.setAuthContext(authContext);
+  }
 
   Uri _uri(String path, [Map<String, String>? query]) {
     final base = Uri.parse(baseUrl);
@@ -22,7 +118,7 @@ class ApiClient {
   }
 
   Future<Map<String, VehicleCategory>> getCategories() async {
-    final response = await http.get(_uri('/api/categories'));
+    final response = await _client.get(_uri('/api/categories'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return data.map((k, v) =>
@@ -30,7 +126,7 @@ class ApiClient {
   }
 
   Future<Map<String, ServiceItem>> getServices(String category) async {
-    final response = await http.get(_uri('/api/services/$category'));
+    final response = await _client.get(_uri('/api/services/$category'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return data.map(
@@ -38,7 +134,7 @@ class ApiClient {
   }
 
   Future<List<PricingRow>> getPricing() async {
-    final response = await http.get(_uri('/api/pricing'));
+    final response = await _client.get(_uri('/api/pricing'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as List<dynamic>;
     return data
@@ -51,7 +147,7 @@ class ApiClient {
     double? biasLat,
     double? biasLng,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/addresses/search', {
         'query': query,
         if (biasLat != null) 'biasLat': '$biasLat',
@@ -79,7 +175,7 @@ class ApiClient {
       return null;
     }
 
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/addresses/resolve', {
         'placeId': placeId,
         if (suggestion.displayName.trim().isNotEmpty)
@@ -102,7 +198,7 @@ class ApiClient {
   }
 
   Future<String?> reverseGeocode(double lat, double lng) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/addresses/reverse', {
         'lat': '$lat',
         'lng': '$lng',
@@ -130,7 +226,7 @@ class ApiClient {
     required String dropoff,
     required double distance,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/quote', {
         'category': category,
         'service': service,
@@ -191,7 +287,7 @@ class ApiClient {
       }
     };
 
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/rides'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(payload),
@@ -201,15 +297,32 @@ class ApiClient {
   }
 
   Future<RideData> getRide(String id) async {
-    final response = await http.get(_uri('/api/rides/$id'));
+    final response = await _client.get(_uri('/api/rides/$id'));
     _throwOnError(response);
     return RideData.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   Future<RideData> cancelRide(String id) async {
-    final response = await http.post(_uri('/api/rides/$id/cancel'));
+    final response = await _client.post(_uri('/api/rides/$id/cancel'));
     _throwOnError(response);
     return RideData.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  Future<void> deleteRide(String id) async {
+    final response = await _client.delete(_uri('/api/rides/$id'));
+    _throwOnError(response);
+  }
+
+  Future<Map<String, dynamic>> simulateDriverAccept({String? rideId}) async {
+    final response = await _client.post(
+      _uri('/api/test/simulate-driver'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (rideId != null && rideId.trim().isNotEmpty) 'rideId': rideId.trim(),
+      }),
+    );
+    _throwOnError(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   Future<RideData> submitRideRating({
@@ -217,7 +330,7 @@ class ApiClient {
     required int score,
     String? comment,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/rides/$rideId/rating'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -232,7 +345,7 @@ class ApiClient {
   }
 
   Future<AdminPricingConfig> getAdminPricingConfig() async {
-    final response = await http.get(_uri('/api/admin/pricing-config'));
+    final response = await _client.get(_uri('/api/admin/pricing-config'));
     _throwOnError(response);
     return AdminPricingConfig.fromJson(
         jsonDecode(response.body) as Map<String, dynamic>);
@@ -240,7 +353,7 @@ class ApiClient {
 
   Future<AdminPricingConfig> saveAdminPricingConfig(
       AdminPricingConfig config) async {
-    final response = await http.put(
+    final response = await _client.put(
       _uri('/api/admin/pricing-config'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(config.toJson()),
@@ -251,7 +364,7 @@ class ApiClient {
   }
 
   Future<List<String>> getAdminVehicleAccessories() async {
-    final response = await http.get(_uri('/api/admin/vehicle-accessories'));
+    final response = await _client.get(_uri('/api/admin/vehicle-accessories'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final list = data['accessories'] as List<dynamic>? ?? const [];
@@ -262,12 +375,13 @@ class ApiClient {
   }
 
   Future<Map<String, List<String>>> getAdminCatalogs() async {
-    final response = await http.get(_uri('/api/admin/catalogs'));
+    final response = await _client.get(_uri('/api/admin/catalogs'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final vehicleAccessories =
         data['vehicle_accessories'] as List<dynamic>? ?? const [];
-    final driverDocuments = data['driver_documents'] as List<dynamic>? ?? const [];
+    final driverDocuments =
+        data['driver_documents'] as List<dynamic>? ?? const [];
     final driverSkills = data['driver_skills'] as List<dynamic>? ?? const [];
     return {
       'vehicle_accessories': vehicleAccessories
@@ -289,7 +403,7 @@ class ApiClient {
     required String catalogKey,
     required String item,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/admin/catalogs/$catalogKey/entries'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'item': item}),
@@ -301,7 +415,8 @@ class ApiClient {
         catalogs['vehicle_accessories'] as List<dynamic>? ?? const [];
     final driverDocuments =
         catalogs['driver_documents'] as List<dynamic>? ?? const [];
-    final driverSkills = catalogs['driver_skills'] as List<dynamic>? ?? const [];
+    final driverSkills =
+        catalogs['driver_skills'] as List<dynamic>? ?? const [];
     return {
       'vehicle_accessories': vehicleAccessories
           .map((entry) => entry.toString())
@@ -323,7 +438,7 @@ class ApiClient {
     required String oldItem,
     required String newItem,
   }) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/admin/catalogs/$catalogKey/entries'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'oldItem': oldItem, 'newItem': newItem}),
@@ -335,7 +450,8 @@ class ApiClient {
         catalogs['vehicle_accessories'] as List<dynamic>? ?? const [];
     final driverDocuments =
         catalogs['driver_documents'] as List<dynamic>? ?? const [];
-    final driverSkills = catalogs['driver_skills'] as List<dynamic>? ?? const [];
+    final driverSkills =
+        catalogs['driver_skills'] as List<dynamic>? ?? const [];
     return {
       'vehicle_accessories': vehicleAccessories
           .map((entry) => entry.toString())
@@ -356,7 +472,7 @@ class ApiClient {
     required String catalogKey,
     required String item,
   }) async {
-    final response = await http.delete(
+    final response = await _client.delete(
       _uri('/api/admin/catalogs/$catalogKey/entries'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'item': item}),
@@ -368,7 +484,8 @@ class ApiClient {
         catalogs['vehicle_accessories'] as List<dynamic>? ?? const [];
     final driverDocuments =
         catalogs['driver_documents'] as List<dynamic>? ?? const [];
-    final driverSkills = catalogs['driver_skills'] as List<dynamic>? ?? const [];
+    final driverSkills =
+        catalogs['driver_skills'] as List<dynamic>? ?? const [];
     return {
       'vehicle_accessories': vehicleAccessories
           .map((entry) => entry.toString())
@@ -390,7 +507,7 @@ class ApiClient {
     required String item,
     required String direction,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/admin/catalogs/$catalogKey/reorder'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'item': item, 'direction': direction}),
@@ -402,7 +519,8 @@ class ApiClient {
         catalogs['vehicle_accessories'] as List<dynamic>? ?? const [];
     final driverDocuments =
         catalogs['driver_documents'] as List<dynamic>? ?? const [];
-    final driverSkills = catalogs['driver_skills'] as List<dynamic>? ?? const [];
+    final driverSkills =
+        catalogs['driver_skills'] as List<dynamic>? ?? const [];
     return {
       'vehicle_accessories': vehicleAccessories
           .map((entry) => entry.toString())
@@ -423,7 +541,7 @@ class ApiClient {
     required String catalogKey,
     required List<String> items,
   }) async {
-    final response = await http.put(
+    final response = await _client.put(
       _uri('/api/admin/catalogs/$catalogKey/order'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'items': items}),
@@ -435,7 +553,8 @@ class ApiClient {
         catalogs['vehicle_accessories'] as List<dynamic>? ?? const [];
     final driverDocuments =
         catalogs['driver_documents'] as List<dynamic>? ?? const [];
-    final driverSkills = catalogs['driver_skills'] as List<dynamic>? ?? const [];
+    final driverSkills =
+        catalogs['driver_skills'] as List<dynamic>? ?? const [];
     return {
       'vehicle_accessories': vehicleAccessories
           .map((entry) => entry.toString())
@@ -453,7 +572,7 @@ class ApiClient {
   }
 
   Future<List<AdminVehicle>> getAdminVehicles() async {
-    final response = await http.get(_uri('/api/admin/vehicles'));
+    final response = await _client.get(_uri('/api/admin/vehicles'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final list = data['vehicles'] as List<dynamic>? ?? const [];
@@ -464,7 +583,7 @@ class ApiClient {
   }
 
   Future<AdminVehicle> createAdminVehicle(AdminVehicle vehicle) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/admin/vehicles'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(vehicle.toJson()),
@@ -475,7 +594,7 @@ class ApiClient {
   }
 
   Future<AdminVehicle> updateAdminVehicle(AdminVehicle vehicle) async {
-    final response = await http.put(
+    final response = await _client.put(
       _uri('/api/admin/vehicles/${vehicle.id}'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(vehicle.toJson()),
@@ -486,7 +605,7 @@ class ApiClient {
   }
 
   Future<AdminVehicle> setAdminVehicleActive(String id, bool active) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/admin/vehicles/$id/status'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'active': active}),
@@ -501,7 +620,7 @@ class ApiClient {
     required bool suspended,
     String? reason,
   }) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/admin/vehicles/$id/suspension'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -515,12 +634,12 @@ class ApiClient {
   }
 
   Future<void> deleteAdminVehicle(String id) async {
-    final response = await http.delete(_uri('/api/admin/vehicles/$id'));
+    final response = await _client.delete(_uri('/api/admin/vehicles/$id'));
     _throwOnError(response);
   }
 
   Future<List<AdminDriver>> getAdminDrivers() async {
-    final response = await http.get(_uri('/api/admin/drivers'));
+    final response = await _client.get(_uri('/api/admin/drivers'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final list = data['drivers'] as List<dynamic>? ?? const [];
@@ -531,7 +650,7 @@ class ApiClient {
   }
 
   Future<List<String>> getAdminDriverSkills() async {
-    final response = await http.get(_uri('/api/admin/driver-skills'));
+    final response = await _client.get(_uri('/api/admin/driver-skills'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final list = data['skills'] as List<dynamic>? ?? const [];
@@ -545,9 +664,10 @@ class ApiClient {
     String? driverId,
     int limit = 100,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/admin/drivers/audit', {
-        if (driverId != null && driverId.trim().isNotEmpty) 'driverId': driverId,
+        if (driverId != null && driverId.trim().isNotEmpty)
+          'driverId': driverId,
         'limit': '$limit',
       }),
     );
@@ -561,7 +681,7 @@ class ApiClient {
   }
 
   Future<AdminDriver> createAdminDriver(AdminDriver driver) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/admin/drivers'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(driver.toJson()),
@@ -572,7 +692,7 @@ class ApiClient {
   }
 
   Future<AdminDriver> updateAdminDriver(AdminDriver driver) async {
-    final response = await http.put(
+    final response = await _client.put(
       _uri('/api/admin/drivers/${driver.id}'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(driver.toJson()),
@@ -583,7 +703,7 @@ class ApiClient {
   }
 
   Future<AdminDriver> setAdminDriverStatus(String id, bool active) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/admin/drivers/$id/status'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'active': active}),
@@ -598,7 +718,7 @@ class ApiClient {
     required bool suspended,
     String? reason,
   }) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/admin/drivers/$id/suspension'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -612,7 +732,7 @@ class ApiClient {
   }
 
   Future<List<AdminCustomer>> getAdminCustomers() async {
-    final response = await http.get(_uri('/api/admin/customers'));
+    final response = await _client.get(_uri('/api/admin/customers'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final list = data['customers'] as List<dynamic>? ?? const [];
@@ -626,7 +746,7 @@ class ApiClient {
     required String id,
     required bool active,
   }) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/admin/customers/$id/status'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'active': active}),
@@ -641,7 +761,7 @@ class ApiClient {
     required bool suspended,
     String? reason,
   }) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/admin/customers/$id/suspension'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -654,8 +774,9 @@ class ApiClient {
     return AdminCustomer.fromJson(data['customer'] as Map<String, dynamic>);
   }
 
-  Future<AdminDriver> setAdminDriverAvailability(String id, bool available) async {
-    final response = await http.patch(
+  Future<AdminDriver> setAdminDriverAvailability(
+      String id, bool available) async {
+    final response = await _client.patch(
       _uri('/api/admin/drivers/$id/availability'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'available': available}),
@@ -666,12 +787,12 @@ class ApiClient {
   }
 
   Future<void> deleteAdminDriver(String id) async {
-    final response = await http.delete(_uri('/api/admin/drivers/$id'));
+    final response = await _client.delete(_uri('/api/admin/drivers/$id'));
     _throwOnError(response);
   }
 
   Future<List<DriverDetail>> getDrivers() async {
-    final response = await http.get(_uri('/api/drivers'));
+    final response = await _client.get(_uri('/api/drivers'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as List<dynamic>;
     return data
@@ -685,7 +806,7 @@ class ApiClient {
     String platform = 'flutter',
     String appState = 'foreground',
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/driver/devices/register'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -709,7 +830,7 @@ class ApiClient {
       if (scheduledWindowHours != null && scheduledWindowHours > 0)
         'scheduledWindowHours': '$scheduledWindowHours',
     };
-    final response = await http.get(_uri('/api/driver/rides', query));
+    final response = await _client.get(_uri('/api/driver/rides', query));
     _throwOnError(response);
     final data = jsonDecode(response.body) as List<dynamic>;
     return data
@@ -724,7 +845,7 @@ class ApiClient {
     String? from,
     String? to,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/driver/account-statement', {
         'driverId': driverId,
         'windowDays': '$windowDays',
@@ -745,7 +866,7 @@ class ApiClient {
     String? from,
     String? to,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/driver/account-statement.csv', {
         'driverId': driverId,
         'windowDays': '$windowDays',
@@ -765,7 +886,7 @@ class ApiClient {
     String? from,
     String? to,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/admin/drivers/$driverId/account-statement', {
         'windowDays': '$windowDays',
         'limit': '$limit',
@@ -783,7 +904,7 @@ class ApiClient {
     required double amount,
     String? note,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/admin/drivers/$driverId/payout'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -800,7 +921,7 @@ class ApiClient {
     required double amount,
     String? note,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/admin/drivers/$driverId/adjustment'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -814,7 +935,7 @@ class ApiClient {
 
   Future<DriverDetail> updateDriverAvailability(
       String driverId, bool available) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/drivers/$driverId/availability'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'available': available}),
@@ -826,7 +947,7 @@ class ApiClient {
 
   Future<RideData> updateRideStatus(String rideId, String status,
       {String? driverId}) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/driver/rides/$rideId/status'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -847,13 +968,14 @@ class ApiClient {
     List<String>? complaintTags,
     String? adminNotes,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/driver/rides/$rideId/customer-rating'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'driverId': driverId,
         'score': score,
-        if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
+        if (comment != null && comment.trim().isNotEmpty)
+          'comment': comment.trim(),
         if (complaintTags != null && complaintTags.isNotEmpty)
           'complaintTags': complaintTags,
         if (adminNotes != null && adminNotes.trim().isNotEmpty)
@@ -866,7 +988,7 @@ class ApiClient {
   }
 
   Future<Map<String, List<String>>> getAdminIncidentsCatalog() async {
-    final response = await http.get(_uri('/api/admin/incidents/catalog'));
+    final response = await _client.get(_uri('/api/admin/incidents/catalog'));
     _throwOnError(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final categories = data['categories'] as Map<String, dynamic>? ?? const {};
@@ -888,7 +1010,7 @@ class ApiClient {
     String? status,
     int limit = 120,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/admin/incidents', {
         if (subjectType != null && subjectType.trim().isNotEmpty)
           'subjectType': subjectType.trim(),
@@ -917,7 +1039,7 @@ class ApiClient {
     String? reportedBy,
     String? rideId,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/admin/incidents'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -926,7 +1048,8 @@ class ApiClient {
         'category': category,
         'severity': severity,
         'title': title,
-        if (details != null && details.trim().isNotEmpty) 'details': details.trim(),
+        if (details != null && details.trim().isNotEmpty)
+          'details': details.trim(),
         if (reportedBy != null && reportedBy.trim().isNotEmpty)
           'reportedBy': reportedBy.trim(),
         if (rideId != null && rideId.trim().isNotEmpty) 'rideId': rideId.trim(),
@@ -941,7 +1064,7 @@ class ApiClient {
     required String id,
     required String status,
   }) async {
-    final response = await http.patch(
+    final response = await _client.patch(
       _uri('/api/admin/incidents/$id/status'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'status': status}),
@@ -956,7 +1079,7 @@ class ApiClient {
     String? subjectId,
     int limit = 120,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/admin/sanctions', {
         if (subjectType != null && subjectType.trim().isNotEmpty)
           'subjectType': subjectType.trim(),
@@ -980,7 +1103,7 @@ class ApiClient {
     String? status,
     int limit = 1000,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/admin/incidents.csv', {
         if (subjectType != null && subjectType.trim().isNotEmpty)
           'subjectType': subjectType.trim(),
@@ -999,7 +1122,7 @@ class ApiClient {
     String? subjectId,
     int limit = 1000,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/admin/sanctions.csv', {
         if (subjectType != null && subjectType.trim().isNotEmpty)
           'subjectType': subjectType.trim(),
@@ -1022,7 +1145,7 @@ class ApiClient {
     String? details,
     String? rideId,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/driver/incidents'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -1032,7 +1155,8 @@ class ApiClient {
         'category': category,
         'severity': severity,
         'title': title,
-        if (details != null && details.trim().isNotEmpty) 'details': details.trim(),
+        if (details != null && details.trim().isNotEmpty)
+          'details': details.trim(),
         if (rideId != null && rideId.trim().isNotEmpty) 'rideId': rideId.trim(),
       }),
     );
@@ -1045,7 +1169,7 @@ class ApiClient {
     required String driverId,
     int limit = 30,
   }) async {
-    final response = await http.get(
+    final response = await _client.get(
       _uri('/api/driver/ratings', {
         'driverId': driverId,
         'limit': '$limit',
@@ -1065,7 +1189,7 @@ class ApiClient {
     required String driverId,
     required String responseText,
   }) async {
-    final response = await http.post(
+    final response = await _client.post(
       _uri('/api/driver/ratings/$ratingId/reply'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -1079,7 +1203,7 @@ class ApiClient {
   }
 
   Future<AdminRatingsDistribution> getAdminRatingsDistribution() async {
-    final response = await http.get(_uri('/api/admin/ratings/distribution'));
+    final response = await _client.get(_uri('/api/admin/ratings/distribution'));
     _throwOnError(response);
     return AdminRatingsDistribution.fromJson(
         jsonDecode(response.body) as Map<String, dynamic>);

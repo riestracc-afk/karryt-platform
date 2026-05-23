@@ -13,16 +13,17 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart'
-  show
-    Clipboard,
-    ClipboardData,
-    HapticFeedback,
-    LogicalKeyboardKey,
-    SystemSound,
-    SystemSoundType,
-    rootBundle;
+    show
+        Clipboard,
+        ClipboardData,
+        HapticFeedback,
+        LogicalKeyboardKey,
+        SystemSound,
+        SystemSoundType,
+        rootBundle;
 
 import 'core/api_base.dart';
+import 'core/app_permissions.dart';
 import 'core/app_theme.dart';
 import 'core/csv_download.dart';
 import 'data/address_store.dart';
@@ -32,6 +33,53 @@ import 'data/google_routes_client.dart';
 import 'data/realtime_client.dart';
 import 'domain/models.dart';
 import 'state/ride_controller.dart';
+import 'utils/map_launcher.dart';
+
+/// Construye una cadena de dirección completa y explícita para mostrar siempre número/interior si existen
+String getFullAddressString(GeocodeSuggestion suggestion) {
+  // Si primaryText y secondaryText existen, úsalos explícitamente
+  final parts = <String>[];
+  if (suggestion.primaryText != null &&
+      suggestion.primaryText!.trim().isNotEmpty) {
+    parts.add(suggestion.primaryText!.trim());
+  }
+  if (suggestion.secondaryText != null &&
+      suggestion.secondaryText!.trim().isNotEmpty) {
+    parts.add(suggestion.secondaryText!.trim());
+  }
+  // Si displayName tiene info adicional, agrégala solo si no es duplicada
+  if (suggestion.displayName.isNotEmpty) {
+    final display = suggestion.displayName.trim();
+    if (!parts.any((p) => display.contains(p))) {
+      parts.add(display);
+    }
+  }
+  // Unir y limpiar duplicados
+  final seen = <String>{};
+  final filtered = parts.where((e) => seen.add(e)).toList();
+  return filtered.join(', ');
+}
+
+/// Abre la ubicación en la app de mapas del dispositivo de forma segura
+Future<void> openMapLocationSafe({
+  required double lat,
+  required double lng,
+  String? label,
+  required BuildContext context,
+}) async {
+  try {
+    await openMapLocation(lat: lat, lng: lng, label: label);
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo abrir la app de mapas: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -228,7 +276,6 @@ class _SmartIconState extends State<SmartIcon>
   }
 }
 
-
 /// SnackBar con animación mejorada
 void showKarrytSnackBar(BuildContext context, String message,
     {Duration duration = const Duration(seconds: 4)}) {
@@ -372,7 +419,6 @@ extension ContextDialogExtension on BuildContext {
     );
   }
 }
-
 
 /// Botón de acción flotante mejorado con animación de escala
 class FloatingActionButtonPlus extends StatefulWidget {
@@ -621,7 +667,6 @@ class _AdvancedLoadingDialogState extends State<AdvancedLoadingDialog>
   }
 }
 
-
 /// Indicador de progreso suave con onda animada
 class SmoothProgressIndicator extends StatelessWidget {
   const SmoothProgressIndicator({
@@ -821,9 +866,9 @@ class _AnimatedCardState extends State<AnimatedCard>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
-    _elevationAnimation =
-        Tween<double>(begin: widget.elevation, end: widget.elevation * 2.5)
-            .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _elevationAnimation = Tween<double>(
+            begin: widget.elevation, end: widget.elevation * 2.5)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _scaleAnimation = Tween<double>(begin: 1, end: 1.02).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOut),
     );
@@ -863,7 +908,6 @@ class _AnimatedCardState extends State<AnimatedCard>
   }
 }
 
-
 /// Fondo con gradiente animado opcional para premium UI
 class GradientBackground extends StatelessWidget {
   const GradientBackground({
@@ -881,7 +925,8 @@ class GradientBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
     final surfaceColor = Theme.of(context).colorScheme.surface;
-    final effectiveColors = colors ?? [primaryColor.withAlpha(10), surfaceColor];
+    final effectiveColors =
+        colors ?? [primaryColor.withAlpha(10), surfaceColor];
 
     if (!animated) {
       return Container(
@@ -982,7 +1027,8 @@ class StatusBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: color.withAlpha((0.15 * 255).toInt()),
-        border: Border.all(color: color.withAlpha((0.3 * 255).toInt()), width: 1),
+        border:
+            Border.all(color: color.withAlpha((0.3 * 255).toInt()), width: 1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -1003,7 +1049,6 @@ class StatusBadge extends StatelessWidget {
     );
   }
 }
-
 
 /// Botón mejorado con animación de escala y mejor feedback
 class EnhancedFilledButton extends StatefulWidget {
@@ -1156,7 +1201,6 @@ class PremiumPageTransition extends PageRouteBuilder {
           },
         );
 }
-
 
 /// Widget con efecto de pulso animado para elementos destacados
 class PulseAnimation extends StatefulWidget {
@@ -1334,9 +1378,9 @@ class _PremiumCardWrapperState extends State<PremiumCardWrapper>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
-    _elevationAnimation =
-        Tween<double>(begin: widget.elevation, end: widget.elevation * 3)
-            .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _elevationAnimation = Tween<double>(
+            begin: widget.elevation, end: widget.elevation * 3)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   }
 
   @override
@@ -1361,12 +1405,15 @@ class _PremiumCardWrapperState extends State<PremiumCardWrapper>
             onTap: widget.onTap,
             child: Card(
               elevation: _elevationAnimation.value,
-              shadowColor:
-                  Theme.of(context).colorScheme.primary.withAlpha((0.3 * 255).toInt()),
+              shadowColor: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withAlpha((0.3 * 255).toInt()),
               child: Transform.scale(
-                scale: 1 + ((_elevationAnimation.value - widget.elevation) /
-                        (widget.elevation * 2)) *
-                    0.01,
+                scale: 1 +
+                    ((_elevationAnimation.value - widget.elevation) /
+                            (widget.elevation * 2)) *
+                        0.01,
                 child: widget.child,
               ),
             ),
@@ -1376,7 +1423,6 @@ class _PremiumCardWrapperState extends State<PremiumCardWrapper>
     );
   }
 }
-
 
 final Map<String, String> _runtimeEnv = <String, String>{};
 
@@ -1468,6 +1514,14 @@ String get _googleRoutesApiKey {
     return fromEnvFile;
   }
   return const String.fromEnvironment('GOOGLE_ROUTES_API_KEY');
+}
+
+String get _googlePlacesApiKey {
+  final fromEnvFile = _readEnvValue('GOOGLE_PLACES_API_KEY');
+  if (fromEnvFile.isNotEmpty) {
+    return fromEnvFile;
+  }
+  return const String.fromEnvironment('GOOGLE_PLACES_API_KEY');
 }
 
 String get _firebaseWebVapidKey {
@@ -1606,7 +1660,8 @@ class KarrytStatusBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isError = type == 'error';
-    final baseColor = isError ? const Color(0xFFB91C1C) : const Color(0xFF15803D);
+    final baseColor =
+        isError ? const Color(0xFFB91C1C) : const Color(0xFF15803D);
 
     return Container(
       width: double.infinity,
@@ -1691,7 +1746,8 @@ class _KarrytSkeletonLoaderState extends State<KarrytSkeletonLoader>
       animation: _controller,
       builder: (context, child) {
         return Opacity(
-          opacity: 0.6 + (0.4 * (math.sin(_controller.value * math.pi * 2) + 1) / 2),
+          opacity:
+              0.6 + (0.4 * (math.sin(_controller.value * math.pi * 2) + 1) / 2),
           child: ShaderMask(
             shaderCallback: (bounds) {
               return LinearGradient(
@@ -1956,6 +2012,7 @@ class _RideScreenState extends State<RideScreen> {
   late final ScrollController _pageScrollController;
 
   late final ApiClient _apiClient;
+  late final GeocodingClient _geocodingClient;
   late final RideController _controller;
   late final GoogleRoutesClient _googleRoutesClient;
   late final AddressStore _addressStore;
@@ -1967,6 +2024,7 @@ class _RideScreenState extends State<RideScreen> {
 
   static const _defaultCenter = LatLng(25.6866, -100.3161);
   MapPickMode _mapPickMode = MapPickMode.pickup;
+  bool _mapEditingEnabled = false;
   LatLng? _pickupPoint;
   LatLng? _dropoffPoint;
   bool _locating = false;
@@ -1982,6 +2040,13 @@ class _RideScreenState extends State<RideScreen> {
   bool _routeLoading = false;
   double? _routeDistanceKm;
   int? _etaMinutes;
+
+  // Multiplicadores ETA — cargados desde SharedPreferences (configurados en admin)
+  double _etaPeakMultiplier = 2.0;
+  double _etaModerateMultiplier = 1.8;
+  double _etaBaseMultiplier = 1.6;
+  bool _etaSurgeActive = false;
+  double _etaSurgeMultiplier = 1.3;
   List<LatLng> _routePoints = const [];
   LatLng? _currentDevicePoint;
   String? _currentLocationLabel;
@@ -1996,6 +2061,8 @@ class _RideScreenState extends State<RideScreen> {
   int _dropoffAutocompleteRequestId = 0;
   bool _loadingPickupAutocomplete = false;
   bool _loadingDropoffAutocomplete = false;
+  bool _suppressPickupInputListener = false;
+  bool _suppressDropoffInputListener = false;
   String? _lastPickupResolvedQuery;
   String? _lastDropoffResolvedQuery;
   String? _lastPickupDisambiguationQuery;
@@ -2010,6 +2077,13 @@ class _RideScreenState extends State<RideScreen> {
 
   static const _lastPickupAddressKey = 'Karryt_last_pickup_address';
   static const _lastDropoffAddressKey = 'Karryt_last_dropoff_address';
+  static const _userSessionPrefsKey = 'user.session.id';
+  static const _userIdFromEnv =
+      String.fromEnvironment('KARRYT_USER_ID', defaultValue: '');
+  static const _authBearerFromEnv =
+      String.fromEnvironment('KARRYT_AUTH_BEARER', defaultValue: '');
+  static const _authDevSharedKeyFromEnv =
+      String.fromEnvironment('AUTH_DEV_SHARED_KEY', defaultValue: '');
   static const _includedLoadMinutes = 25;
   static const _includedUnloadMinutes = 25;
   static const Set<String> _addressSearchStopWords = {
@@ -2052,7 +2126,19 @@ class _RideScreenState extends State<RideScreen> {
     super.initState();
 
     final baseUrl = resolveApiBaseUrl();
-    _apiClient = ApiClient(baseUrl);
+    final initialUserId =
+        _userIdFromEnv.trim().isNotEmpty ? _userIdFromEnv.trim() : 'USR-LOCAL';
+    _apiClient = ApiClient(
+      baseUrl,
+      authContext: ApiAuthContext.customer(
+        userId: initialUserId,
+        bearerToken: _authBearerFromEnv.isNotEmpty ? _authBearerFromEnv : null,
+        devAuthKey: _authDevSharedKeyFromEnv.isNotEmpty
+            ? _authDevSharedKeyFromEnv
+            : null,
+      ),
+    );
+    _geocodingClient = GeocodingClient(googlePlacesApiKey: _googlePlacesApiKey);
     _controller = RideController(
       apiClient: _apiClient,
       realtimeClient: RealtimeClient(baseUrl),
@@ -2074,6 +2160,9 @@ class _RideScreenState extends State<RideScreen> {
         TextEditingController(text: _controller.pickupText.value)
           ..addListener(() {
             _controller.pickupText.value = _pickupController.text;
+            if (_suppressPickupInputListener) {
+              return;
+            }
             _onAddressInputChanged(isPickup: true);
           });
 
@@ -2081,6 +2170,9 @@ class _RideScreenState extends State<RideScreen> {
         TextEditingController(text: _controller.dropoffText.value)
           ..addListener(() {
             _controller.dropoffText.value = _dropoffController.text;
+            if (_suppressDropoffInputListener) {
+              return;
+            }
             _onAddressInputChanged(isPickup: false);
           });
 
@@ -2092,6 +2184,129 @@ class _RideScreenState extends State<RideScreen> {
 
     unawaited(_loadSavedAddresses());
     unawaited(_loadLastUsedAddresses());
+    unawaited(_restoreUserSession());
+    unawaited(_loadEtaMultipliers());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_requestAppPermissionsForUser());
+    });
+  }
+
+  Future<void> _requestAppPermissionsForUser() async {
+    final result = await AppPermissions.ensureForUser();
+    if (!mounted) {
+      return;
+    }
+
+    await AppPermissions.promptOpenSettingsIfNeeded(context, result);
+  }
+
+  Future<void> _restoreUserSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final envUserId = _userIdFromEnv.trim();
+      final storedUserId = (prefs.getString(_userSessionPrefsKey) ?? '').trim();
+      final resolvedUserId = envUserId.isNotEmpty
+          ? envUserId
+          : (storedUserId.isNotEmpty
+              ? storedUserId
+              : _buildLocalUserSessionId());
+
+      if (storedUserId != resolvedUserId) {
+        await prefs.setString(_userSessionPrefsKey, resolvedUserId);
+      }
+
+      _apiClient.setAuthContext(
+        ApiAuthContext.customer(
+          userId: resolvedUserId,
+          bearerToken:
+              _authBearerFromEnv.isNotEmpty ? _authBearerFromEnv : null,
+          devAuthKey: _authDevSharedKeyFromEnv.isNotEmpty
+              ? _authDevSharedKeyFromEnv
+              : null,
+        ),
+      );
+    } catch (_) {
+      // Ignora errores de persistencia para no bloquear la app.
+    }
+  }
+
+  String _buildLocalUserSessionId() {
+    final suffix =
+        DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase();
+    return 'USR-$suffix';
+  }
+
+  Future<void> _logoutUserSession() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.logout_rounded),
+              SizedBox(width: 10),
+              Expanded(child: Text('Cerrar sesion en este dispositivo')),
+            ],
+          ),
+          content: const Text(
+            'Se cerrara la sesion local de Usuario y se creara una nueva identidad para este dispositivo. Tus datos de operacion se mantienen en backend.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Cerrar sesion'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_userSessionPrefsKey);
+      final newUserId = _buildLocalUserSessionId();
+      await prefs.setString(_userSessionPrefsKey, newUserId);
+
+      _apiClient.setAuthContext(
+        ApiAuthContext.customer(
+          userId: newUserId,
+          bearerToken:
+              _authBearerFromEnv.isNotEmpty ? _authBearerFromEnv : null,
+          devAuthKey: _authDevSharedKeyFromEnv.isNotEmpty
+              ? _authDevSharedKeyFromEnv
+              : null,
+        ),
+      );
+
+      await _controller.init();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Sesion reiniciada. Acceso rapido listo en este dispositivo.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo cerrar sesion: $error')),
+      );
+    }
   }
 
   Future<void> _scrollToSection(GlobalKey key, int index) async {
@@ -2196,7 +2411,10 @@ class _RideScreenState extends State<RideScreen> {
           message: 'Origen confirmado.',
           confirmed: true,
         );
-        _pickupController.text = pickup.displayName;
+        _setAddressControllerText(
+          isPickup: true,
+          value: getFullAddressString(pickup),
+        );
         _controller.setPickupPoint(point.latitude, point.longitude);
       }
       if (dropoff != null) {
@@ -2208,7 +2426,10 @@ class _RideScreenState extends State<RideScreen> {
           message: 'Destino confirmado.',
           confirmed: true,
         );
-        _dropoffController.text = dropoff.displayName;
+        _setAddressControllerText(
+          isPickup: false,
+          value: getFullAddressString(dropoff),
+        );
         _controller.setDropoffPoint(point.latitude, point.longitude);
       }
     });
@@ -2262,8 +2483,14 @@ class _RideScreenState extends State<RideScreen> {
 
     await _scrollToSection(_routePreviewKey, 0);
     final center = isPickup
-        ? (_pickupPoint ?? _currentDevicePoint ?? _dropoffPoint ?? _defaultCenter)
-        : (_dropoffPoint ?? _pickupPoint ?? _currentDevicePoint ?? _defaultCenter);
+        ? (_pickupPoint ??
+            _currentDevicePoint ??
+            _dropoffPoint ??
+            _defaultCenter)
+        : (_dropoffPoint ??
+            _pickupPoint ??
+            _currentDevicePoint ??
+            _defaultCenter);
     _moveMapWhenReady(center, 16);
   }
 
@@ -2303,13 +2530,8 @@ class _RideScreenState extends State<RideScreen> {
     final controller = isPickup ? _pickupController : _dropoffController;
 
     if (!focusNode.hasFocus) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _clearAutocompleteSuggestionsValues(isPickup: isPickup);
-      });
+      // En móvil el foco puede perderse justo al tocar una sugerencia.
+      // No limpiamos aquí para permitir que el tap termine correctamente.
       return;
     }
 
@@ -2322,7 +2544,7 @@ class _RideScreenState extends State<RideScreen> {
     }
 
     final query = controller.text.trim();
-    if (query.length >= 3) {
+    if (query.length >= 2) {
       _loadAutocompleteSuggestions(isPickup: isPickup, query: query);
     }
   }
@@ -2342,6 +2564,32 @@ class _RideScreenState extends State<RideScreen> {
     FocusScope.of(context).requestFocus(
       isPickup ? _pickupFocusNode : _dropoffFocusNode,
     );
+  }
+
+  void _setAddressControllerText({
+    required bool isPickup,
+    required String value,
+  }) {
+    if (isPickup) {
+      _suppressPickupInputListener = true;
+      _pickupController.value = _pickupController.value.copyWith(
+        text: value,
+        selection: TextSelection.collapsed(offset: value.length),
+        composing: TextRange.empty,
+      );
+      _controller.pickupText.value = value;
+      _suppressPickupInputListener = false;
+      return;
+    }
+
+    _suppressDropoffInputListener = true;
+    _dropoffController.value = _dropoffController.value.copyWith(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+      composing: TextRange.empty,
+    );
+    _controller.dropoffText.value = value;
+    _suppressDropoffInputListener = false;
   }
 
   Widget _buildAddressFieldSuffix({required bool isPickup}) {
@@ -2469,7 +2717,7 @@ class _RideScreenState extends State<RideScreen> {
     required String query,
   }) async {
     final normalizedQuery = query.trim();
-    if (normalizedQuery.length < 3) {
+    if (normalizedQuery.length < 2) {
       if (mounted) {
         setState(() {
           _clearAutocompleteSuggestionsValues(isPickup: isPickup);
@@ -2487,6 +2735,27 @@ class _RideScreenState extends State<RideScreen> {
         _setAutocompleteSuggestionValues(isPickup: isPickup, loading: true);
       });
     }
+
+    // Mostrar resultados cacheados de inmediato (estilo Uber/DiDi: no se queda en blanco
+    // aunque la red sea lenta o nula).
+    try {
+      final cached =
+          await _geocodingClient.readCachedSuggestions(normalizedQuery);
+      if (mounted && cached.isNotEmpty) {
+        final latestRequestId = isPickup
+            ? _pickupAutocompleteRequestId
+            : _dropoffAutocompleteRequestId;
+        if (requestId == latestRequestId) {
+          setState(() {
+            _setAutocompleteSuggestionValues(
+              isPickup: isPickup,
+              suggestions: cached,
+              loading: true,
+            );
+          });
+        }
+      }
+    } catch (_) {}
 
     try {
       final suggestions = await _fetchAddressSuggestions(
@@ -2522,22 +2791,75 @@ class _RideScreenState extends State<RideScreen> {
         return;
       }
 
-      final latestRequestId =
-          isPickup ? _pickupAutocompleteRequestId : _dropoffAutocompleteRequestId;
+      final latestRequestId = isPickup
+          ? _pickupAutocompleteRequestId
+          : _dropoffAutocompleteRequestId;
       if (requestId != latestRequestId) {
         return;
       }
 
-      setState(() {
-        _clearAutocompleteSuggestionsValues(isPickup: isPickup);
-        _setAddressValidationFeedbackValues(
-          isPickup: isPickup,
-          message: isPickup
-              ? 'No se pudieron cargar sugerencias para el origen.'
-              : 'No se pudieron cargar sugerencias para el destino.',
-          confirmed: false,
+      try {
+        final fallbackSuggestions = await _geocodingClient.searchAddresses(
+          query,
+          biasLat: _resolveSearchBiasPoint(isPickup: isPickup)?.latitude,
+          biasLng: _resolveSearchBiasPoint(isPickup: isPickup)?.longitude,
         );
-      });
+
+        if (!mounted) {
+          return;
+        }
+
+        // Si la red sigue sin responder, intentar mostrar al menos lo cacheado.
+        var resultsToShow = fallbackSuggestions;
+        if (resultsToShow.isEmpty) {
+          resultsToShow =
+              await _geocodingClient.readCachedSuggestions(normalizedQuery);
+        }
+
+        setState(() {
+          _setAutocompleteSuggestionValues(
+            isPickup: isPickup,
+            suggestions: resultsToShow,
+            loading: false,
+          );
+          if (resultsToShow.isEmpty) {
+            _setAddressValidationFeedbackValues(
+              isPickup: isPickup,
+              message: isPickup
+                  ? 'Sin red. Sigue escribiendo o toca el mapa para fijar el origen.'
+                  : 'Sin red. Sigue escribiendo o toca el mapa para fijar el destino.',
+              confirmed: false,
+            );
+          }
+        });
+      } catch (_) {
+        if (!mounted) {
+          return;
+        }
+
+        // Último recurso: caché persistente.
+        final cached =
+            await _geocodingClient.readCachedSuggestions(normalizedQuery);
+
+        setState(() {
+          if (cached.isNotEmpty) {
+            _setAutocompleteSuggestionValues(
+              isPickup: isPickup,
+              suggestions: cached,
+              loading: false,
+            );
+          } else {
+            _clearAutocompleteSuggestionsValues(isPickup: isPickup);
+            _setAddressValidationFeedbackValues(
+              isPickup: isPickup,
+              message: isPickup
+                  ? 'Sin conexion. Toca el mapa para fijar el origen.'
+                  : 'Sin conexion. Toca el mapa para fijar el destino.',
+              confirmed: false,
+            );
+          }
+        });
+      }
     }
   }
 
@@ -2598,7 +2920,7 @@ class _RideScreenState extends State<RideScreen> {
 
       _setAddressValidationFeedbackValues(
         isPickup: isPickup,
-        message: query.length < 3
+        message: query.length < 2
             ? (isPickup
                 ? 'Sigue escribiendo el origen para validarlo.'
                 : 'Sigue escribiendo el destino para validarlo.')
@@ -2613,7 +2935,7 @@ class _RideScreenState extends State<RideScreen> {
       _syncDistanceFromMap();
     }
 
-    if (query.length < 3) {
+    if (query.length < 2) {
       return;
     }
 
@@ -2673,8 +2995,7 @@ class _RideScreenState extends State<RideScreen> {
       GeocodeSuggestion? selected;
 
       if (shortlist.length == 1) {
-        final topDisplay =
-            _normalizeAddressText(shortlist.first.displayName);
+        final topDisplay = _normalizeAddressText(shortlist.first.displayName);
         final topAddressNumberMatches =
             _countExactTokenMatches(topDisplay, addressNumberTokens);
         final requiresExactAddressNumber = addressNumberTokens.isNotEmpty;
@@ -2788,25 +3109,91 @@ class _RideScreenState extends State<RideScreen> {
     required bool isPickup,
   }) async {
     final biasPoint = _resolveSearchBiasPoint(isPickup: isPickup);
-    final suggestions = await _apiClient.searchAddressSuggestions(
-      query: query,
+
+    // 1) Google Places (si la key es válida y responde).
+    final googleSuggestions = await _geocodingClient.searchGooglePredictions(
+      query,
+      biasLat: biasPoint?.latitude,
+      biasLng: biasPoint?.longitude,
+    );
+    if (googleSuggestions.isNotEmpty) {
+      unawaited(
+          _geocodingClient.writeCachedSuggestions(query, googleSuggestions));
+      return googleSuggestions;
+    }
+
+    // 2) Backend propio + 3) proveedores públicos (ArcGIS + Nominatim) en paralelo.
+    final backendFuture = _apiClient
+        .searchAddressSuggestions(
+          query: query,
+          biasLat: biasPoint?.latitude,
+          biasLng: biasPoint?.longitude,
+        )
+        .timeout(const Duration(seconds: 4),
+            onTimeout: () => const <GeocodeSuggestion>[])
+        .catchError((_) => const <GeocodeSuggestion>[]);
+
+    final parallelFuture = _geocodingClient.searchParallel(
+      query,
       biasLat: biasPoint?.latitude,
       biasLng: biasPoint?.longitude,
     );
 
-    if (suggestions.isEmpty) {
+    final results = await Future.wait([backendFuture, parallelFuture]);
+    final List<GeocodeSuggestion> merged = [];
+    for (final list in results) {
+      merged.addAll(list);
+    }
+
+    // 4) Si todo lo anterior vino vacío, reintentar con contexto (ciudad/estado).
+    if (merged.isEmpty) {
+      final contextTerms = _searchContextTexts(isPickup: isPickup).join(' ');
+      final queryWithContext =
+          contextTerms.trim().isEmpty ? query : '$query, $contextTerms';
+      final ctxArc = await _geocodingClient.searchArcGis(queryWithContext);
+      merged.addAll(ctxArc);
+      if (merged.isEmpty) {
+        final ctxNom = await _geocodingClient.searchAddresses(
+          queryWithContext,
+          biasLat: biasPoint?.latitude,
+          biasLng: biasPoint?.longitude,
+        );
+        merged.addAll(ctxNom);
+      }
+    }
+
+    // 5) Como último recurso, devolver caché persistente.
+    if (merged.isEmpty) {
+      final cached = await _geocodingClient.readCachedSuggestions(query);
+      if (cached.isNotEmpty) {
+        return cached;
+      }
       return const [];
     }
 
-    final hasServerResolvedCoordinates =
-        suggestions.any((item) => item.provider == 'nominatim');
+    final deduped = <GeocodeSuggestion>[];
+    final seen = <String>{};
+    for (final item in merged) {
+      final key = _normalizeAddressText(item.displayName);
+      if (key.isEmpty || seen.contains(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.add(item);
+    }
+
+    // Persistir en caché para uso offline futuro.
+    unawaited(_geocodingClient.writeCachedSuggestions(query, deduped));
+
+    final hasServerResolvedCoordinates = deduped.any(
+        (item) => item.provider == 'nominatim' || item.provider == 'arcgis');
     if (!hasServerResolvedCoordinates) {
-      return suggestions;
+      return deduped;
     }
 
     return _rankAddressSuggestions(
       query: query,
-      suggestions: suggestions,
+      suggestions: deduped,
       isPickup: isPickup,
     );
   }
@@ -2862,7 +3249,7 @@ class _RideScreenState extends State<RideScreen> {
       final normalizedDisplay = _normalizeAddressText(suggestion.displayName);
       final queryTokenMatches =
           _countTokenMatches(normalizedDisplay, queryTokens);
-        final addressNumberMatches =
+      final addressNumberMatches =
           _countExactTokenMatches(normalizedDisplay, addressNumberTokens);
       final localityTokenMatches =
           _countTokenMatches(normalizedDisplay, localityTokens);
@@ -2873,11 +3260,11 @@ class _RideScreenState extends State<RideScreen> {
       var score = 0.0;
       if (normalizedDisplay == normalizedQuery) {
         score += 220;
-      } else if (
-          normalizedQuery.isNotEmpty && normalizedDisplay.startsWith(normalizedQuery)) {
+      } else if (normalizedQuery.isNotEmpty &&
+          normalizedDisplay.startsWith(normalizedQuery)) {
         score += 140;
-      } else if (
-          normalizedQuery.isNotEmpty && normalizedDisplay.contains(normalizedQuery)) {
+      } else if (normalizedQuery.isNotEmpty &&
+          normalizedDisplay.contains(normalizedQuery)) {
         score += 90;
       }
 
@@ -2921,8 +3308,7 @@ class _RideScreenState extends State<RideScreen> {
         return byLocality;
       }
 
-      final byQuery =
-          right.queryTokenMatches.compareTo(left.queryTokenMatches);
+      final byQuery = right.queryTokenMatches.compareTo(left.queryTokenMatches);
       if (byQuery != 0) {
         return byQuery;
       }
@@ -3010,6 +3396,20 @@ class _RideScreenState extends State<RideScreen> {
     required String query,
     required GeocodeSuggestion suggestion,
   }) {
+    if (suggestion.streetNumberConfirmed == true) {
+      return (
+        label: 'Numero exterior confirmado',
+        color: Colors.green.shade700,
+      );
+    }
+
+    if (suggestion.streetNumberConfirmed == false) {
+      return (
+        label: 'Numero exterior no confirmado',
+        color: Colors.orange.shade800,
+      );
+    }
+
     final addressNumberTokens = _extractAddressNumberTokens(query);
     if (addressNumberTokens.isEmpty) {
       return (label: null, color: null);
@@ -3067,30 +3467,47 @@ class _RideScreenState extends State<RideScreen> {
     required bool isPickup,
   }) {
     final secondaryText = suggestion.secondaryText?.trim();
+    final displayName = suggestion.displayName.trim();
+    final primaryText = suggestion.primaryText?.trim();
+
+    // Preferimos siempre mostrar la dirección completa (calle + número + colonia
+    // + ciudad) para que el usuario pueda verificar el número exterior.
+    String? addressLine;
     if (secondaryText != null && secondaryText.isNotEmpty) {
-      return secondaryText;
+      addressLine = secondaryText;
+    } else if (displayName.isNotEmpty &&
+        (primaryText == null || displayName != primaryText)) {
+      addressLine = displayName;
     }
 
     if (!suggestion.hasCoordinates) {
-      return null;
+      return addressLine;
     }
 
     final biasPoint = _resolveSearchBiasPoint(isPickup: isPickup);
-    if (biasPoint == null) {
-      return '${suggestion.lat.toStringAsFixed(5)}, ${suggestion.lng.toStringAsFixed(5)}';
+    String? distanceLabel;
+    if (biasPoint != null) {
+      final distanceKm =
+          _distanceKm(biasPoint, LatLng(suggestion.lat, suggestion.lng));
+      final referenceLabel = _suggestionReferenceLabel(isPickup: isPickup);
+      if (distanceKm < 1) {
+        distanceLabel = 'a ${(distanceKm * 1000).round()} m $referenceLabel';
+      } else {
+        final value = distanceKm < 10
+            ? distanceKm.toStringAsFixed(1)
+            : distanceKm.toStringAsFixed(0);
+        distanceLabel = 'a $value km $referenceLabel';
+      }
     }
 
-    final distanceKm =
-        _distanceKm(biasPoint, LatLng(suggestion.lat, suggestion.lng));
-    final referenceLabel = _suggestionReferenceLabel(isPickup: isPickup);
-    if (distanceKm < 1) {
-      return 'A ${(distanceKm * 1000).round()} m $referenceLabel';
+    final parts = <String>[
+      if (addressLine != null && addressLine.isNotEmpty) addressLine,
+      if (distanceLabel != null) distanceLabel,
+    ];
+    if (parts.isEmpty) {
+      return null;
     }
-
-    final value = distanceKm < 10
-        ? distanceKm.toStringAsFixed(1)
-        : distanceKm.toStringAsFixed(0);
-    return 'A $value km $referenceLabel';
+    return parts.join('\n');
   }
 
   String _suggestionReferenceLabel({required bool isPickup}) {
@@ -3229,9 +3646,16 @@ class _RideScreenState extends State<RideScreen> {
 
   Future<void> _applySuggestion(GeocodeSuggestion selected,
       {required bool isPickup, String? typedQuery}) async {
-    final resolved = selected.isGooglePrediction && !selected.hasCoordinates
-        ? await _apiClient.resolveAddressSuggestion(selected)
-        : selected;
+    GeocodeSuggestion? resolved = selected;
+    if (selected.isGooglePrediction && !selected.hasCoordinates) {
+      try {
+        resolved = await _apiClient.resolveAddressSuggestion(selected);
+      } catch (_) {
+        resolved = await _geocodingClient.resolveGooglePrediction(selected);
+      }
+
+      resolved ??= await _geocodingClient.resolveGooglePrediction(selected);
+    }
 
     if (!mounted || resolved == null || !resolved.hasCoordinates) {
       if (mounted) {
@@ -3251,25 +3675,31 @@ class _RideScreenState extends State<RideScreen> {
     final capturedQuery = typedQuery?.trim();
     final normalizedResolved = _normalizeAddressText(resolved.displayName);
     final queryTokens = capturedQuery == null || capturedQuery.isEmpty
-      ? const <String>{}
-      : _extractMeaningfulAddressTokens([capturedQuery]);
+        ? const <String>{}
+        : _extractMeaningfulAddressTokens([capturedQuery]);
     final addressNumberTokens = capturedQuery == null || capturedQuery.isEmpty
-      ? const <String>{}
-      : _extractAddressNumberTokens(capturedQuery);
+        ? const <String>{}
+        : _extractAddressNumberTokens(capturedQuery);
     final matchedQueryTokens =
-      _countTokenMatches(normalizedResolved, queryTokens);
+        _countTokenMatches(normalizedResolved, queryTokens);
     final matchedAddressNumbers =
-      _countExactTokenMatches(normalizedResolved, addressNumberTokens);
-    final addressNumberConfirmed = addressNumberTokens.isNotEmpty &&
-        matchedAddressNumbers == addressNumberTokens.length;
-    final approximate = capturedQuery != null &&
-      capturedQuery.isNotEmpty &&
-      ((queryTokens.isNotEmpty && matchedQueryTokens < queryTokens.length) ||
+        _countExactTokenMatches(normalizedResolved, addressNumberTokens);
+    final hasApiNumberConfirmation = resolved.streetNumberConfirmed == true;
+    final hasApiNumberRejection = resolved.streetNumberConfirmed == false;
+    final addressNumberConfirmed = hasApiNumberConfirmation ||
         (addressNumberTokens.isNotEmpty &&
-          matchedAddressNumbers < addressNumberTokens.length));
+            matchedAddressNumbers == addressNumberTokens.length);
+    final approximateByTokens = capturedQuery != null &&
+        capturedQuery.isNotEmpty &&
+        ((queryTokens.isNotEmpty && matchedQueryTokens < queryTokens.length) ||
+            (addressNumberTokens.isNotEmpty &&
+                matchedAddressNumbers < addressNumberTokens.length));
+    final approximate = hasApiNumberConfirmation
+        ? false
+        : (hasApiNumberRejection ? true : approximateByTokens);
     final displayText = capturedQuery != null && capturedQuery.isNotEmpty
-      ? capturedQuery
-      : resolved.displayName;
+        ? capturedQuery
+        : resolved.displayName;
     final storedSuggestion = GeocodeSuggestion(
       displayName: displayText,
       lat: resolved.lat,
@@ -3278,47 +3708,55 @@ class _RideScreenState extends State<RideScreen> {
       primaryText: resolved.primaryText,
       secondaryText: resolved.secondaryText,
       provider: resolved.provider,
+      streetNumberConfirmed: resolved.streetNumberConfirmed,
+      routeConfirmed: resolved.routeConfirmed,
+      validationGranularity: resolved.validationGranularity,
+      addressComplete: resolved.addressComplete,
+      possibleNextAction: resolved.possibleNextAction,
     );
+
+    // Calcular la dirección completa para mostrar
+    final fullAddress = getFullAddressString(storedSuggestion);
 
     setState(() {
       if (isPickup) {
         _pickupPoint = point;
-      _lastPickupResolvedQuery = displayText;
+        _lastPickupResolvedQuery = displayText;
         _lastPickupDisambiguationQuery = null;
-      _pickupController.text = displayText;
+        _setAddressControllerText(isPickup: true, value: fullAddress);
         _controller.setPickupPoint(point.latitude, point.longitude);
         _clearAutocompleteSuggestionsValues(isPickup: true);
-      _locationStatus = approximate
-        ? 'Origen aproximado confirmado. Ajusta el pin en mapa si hace falta.'
-        : (addressNumberConfirmed
-            ? 'Origen confirmado con numero exterior.'
-            : 'Origen confirmado con sugerencia de direccion.');
+        _locationStatus = approximate
+            ? 'Origen aproximado confirmado. Ajusta el pin en mapa si hace falta.'
+            : (addressNumberConfirmed
+                ? 'Origen confirmado con numero exterior.'
+                : 'Origen confirmado con sugerencia de direccion.');
       } else {
         _dropoffPoint = point;
-      _lastDropoffResolvedQuery = displayText;
+        _lastDropoffResolvedQuery = displayText;
         _lastDropoffDisambiguationQuery = null;
-      _dropoffController.text = displayText;
+        _setAddressControllerText(isPickup: false, value: fullAddress);
         _controller.setDropoffPoint(point.latitude, point.longitude);
         _clearAutocompleteSuggestionsValues(isPickup: false);
-      _locationStatus = approximate
-        ? 'Destino aproximado confirmado. Ajusta el pin en mapa si hace falta.'
-        : (addressNumberConfirmed
-            ? 'Destino confirmado con numero exterior.'
-            : 'Destino confirmado con sugerencia de direccion.');
+        _locationStatus = approximate
+            ? 'Destino aproximado confirmado. Ajusta el pin en mapa si hace falta.'
+            : (addressNumberConfirmed
+                ? 'Destino confirmado con numero exterior.'
+                : 'Destino confirmado con sugerencia de direccion.');
       }
       _setAddressValidationFeedbackValues(
         isPickup: isPickup,
-      message: approximate
-        ? (isPickup
-          ? 'Origen aproximado confirmado. Conservamos tu captura y puedes ajustar el pin en mapa.'
-          : 'Destino aproximado confirmado. Conservamos tu captura y puedes ajustar el pin en mapa.')
-        : (addressNumberConfirmed
+        message: approximate
             ? (isPickup
-                ? 'Origen confirmado con numero exterior.'
-                : 'Destino confirmado con numero exterior.')
-            : (isPickup ? 'Origen confirmado.' : 'Destino confirmado.')),
+                ? 'Origen aproximado confirmado. Conservamos tu captura y puedes ajustar el pin en mapa.'
+                : 'Destino aproximado confirmado. Conservamos tu captura y puedes ajustar el pin en mapa.')
+            : (addressNumberConfirmed
+                ? (isPickup
+                    ? 'Origen confirmado con numero exterior.'
+                    : 'Destino confirmado con numero exterior.')
+                : (isPickup ? 'Origen confirmado.' : 'Destino confirmado.')),
         confirmed: true,
-      approximate: approximate,
+        approximate: approximate,
       );
     });
 
@@ -3326,7 +3764,10 @@ class _RideScreenState extends State<RideScreen> {
       FocusScope.of(context).unfocus();
     }
 
-    _moveMapWhenReady(point, 14);
+    // Acercar el mapa lo suficiente para que el usuario verifique el numero
+    // exterior visualmente (estilo Uber/DiDi al confirmar destino).
+    _moveMapWhenReady(point, 17);
+    unawaited(_scrollToSection(_routePreviewKey, 0));
     _syncDistanceFromMap();
     await _rememberRecentAddress(storedSuggestion);
     await _saveLastAddress(storedSuggestion, isPickup: isPickup);
@@ -3413,7 +3854,7 @@ class _RideScreenState extends State<RideScreen> {
                 return InputChip(
                   avatar: const Icon(Icons.star, size: 16),
                   label: Text(
-                    _compactAddress(item.displayName, maxLength: 28),
+                    getFullAddressString(item),
                     style: const TextStyle(fontSize: 12),
                   ),
                   labelPadding: const EdgeInsets.symmetric(horizontal: 2),
@@ -3440,7 +3881,7 @@ class _RideScreenState extends State<RideScreen> {
                 return ActionChip(
                   avatar: const Icon(Icons.history, size: 16),
                   label: Text(
-                    _compactAddress(item.displayName, maxLength: 28),
+                    getFullAddressString(item),
                     style: const TextStyle(fontSize: 12),
                   ),
                   labelPadding: const EdgeInsets.symmetric(horizontal: 2),
@@ -3485,30 +3926,22 @@ class _RideScreenState extends State<RideScreen> {
         _routeDistanceKm = null;
         _routeStatus = null;
         _routePoints = const [];
+        _routeLoading = false;
       });
       _distanceController.text = '';
       _controller.distanceText.value = '';
       return;
     }
 
-    final pickup = _pickupPoint!;
-    final dropoff = _dropoffPoint!;
-    final straightDistance = _distanceKm(pickup, dropoff);
-    final etaMinutes = math.max(1, (straightDistance / 35 * 60).round());
-    final distanceValue = straightDistance.toStringAsFixed(1);
-
     setState(() {
-      _routeDistanceKm = straightDistance;
-      _etaMinutes = etaMinutes;
-      _routeLoading = false;
-      _routePoints = [pickup, dropoff];
-      _routeStatus = _googleRoutesApiKey.isNotEmpty
-          ? 'Estimacion preliminar. Recalcula tarifa para confirmar ruta real.'
-          : 'Estimacion preliminar sin Routes API activa.';
+      _routeLoading = true;
+      _routeStatus = 'Trazando ruta vial...';
+      _routePoints = const [];
+      _routeDistanceKm = null;
+      _etaMinutes = null;
     });
 
-    _distanceController.text = distanceValue;
-    _controller.distanceText.value = distanceValue;
+    unawaited(_refreshRouteData(useRoutesApi: true, quoteAfterUpdate: false));
   }
 
   Future<bool> _refreshRouteData({
@@ -3811,32 +4244,70 @@ class _RideScreenState extends State<RideScreen> {
     return points;
   }
 
+  Future<void> _loadEtaMultipliers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _etaPeakMultiplier =
+            prefs.getDouble('admin.eta.peakMultiplier') ?? 2.0;
+        _etaModerateMultiplier =
+            prefs.getDouble('admin.eta.moderateMultiplier') ?? 1.8;
+        _etaBaseMultiplier =
+            prefs.getDouble('admin.eta.baseMultiplier') ?? 1.6;
+        _etaSurgeActive = prefs.getBool('admin.eta.surgeEnabled') ?? false;
+        _etaSurgeMultiplier =
+            prefs.getDouble('admin.eta.surgeMultiplier') ?? 1.3;
+      });
+    } catch (_) {}
+  }
+
   double _trafficMultiplier(DateTime now) {
     final isWeekday =
         now.weekday >= DateTime.monday && now.weekday <= DateTime.friday;
     final hour = now.hour;
 
-    if (isWeekday && ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 21))) {
-      return 1.45;
+    double base;
+    if (isWeekday &&
+        ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 21))) {
+      base = _etaPeakMultiplier;
+    } else if ((hour >= 12 && hour < 15) || (hour >= 21 && hour < 23)) {
+      base = _etaModerateMultiplier;
+    } else {
+      base = _etaBaseMultiplier;
     }
-    if ((hour >= 12 && hour < 15) || (hour >= 21 && hour < 23)) {
-      return 1.2;
+
+    // Aplica multiplicador de demanda si está activado por el administrador
+    if (_etaSurgeActive) {
+      base = base * _etaSurgeMultiplier;
     }
-    return 1.0;
+
+    return base;
   }
 
   void _onMapTap(TapPosition _, LatLng point) {
+    if (!_mapEditingEnabled) {
+      return;
+    }
+
     final isPickup = _mapPickMode == MapPickMode.pickup;
     setState(() {
       if (isPickup) {
         _pickupPoint = point;
-        _pickupController.text = _formatCoordsLabel('Ubicacion', point);
+        _setAddressControllerText(
+          isPickup: true,
+          value: _formatCoordsLabel('Ubicacion', point),
+        );
         _controller.setPickupPoint(point.latitude, point.longitude);
       } else {
         _dropoffPoint = point;
-        _dropoffController.text = _formatCoordsLabel('Destino', point);
+        _setAddressControllerText(
+          isPickup: false,
+          value: _formatCoordsLabel('Destino', point),
+        );
         _controller.setDropoffPoint(point.latitude, point.longitude);
       }
+      _mapEditingEnabled = false;
     });
 
     _syncDistanceFromMap();
@@ -3854,25 +4325,37 @@ class _RideScreenState extends State<RideScreen> {
     });
 
     try {
-      final address = await _apiClient.reverseGeocode(
-        point.latitude,
-        point.longitude,
-      );
+      String? address;
+      try {
+        address = await _apiClient.reverseGeocode(
+          point.latitude,
+          point.longitude,
+        );
+      } catch (_) {
+        address = await _geocodingClient.reverseGeocode(
+          point.latitude,
+          point.longitude,
+        );
+      }
 
       if (!mounted || address == null || address.isEmpty) {
         return;
       }
 
+      final geocodeSuggestion = GeocodeSuggestion(
+          displayName: address, lat: point.latitude, lng: point.longitude);
+      final fullAddress = getFullAddressString(geocodeSuggestion);
+
       setState(() {
         if (isPickup) {
           _lastPickupResolvedQuery = address;
           _lastPickupDisambiguationQuery = null;
-          _pickupController.text = address;
+          _setAddressControllerText(isPickup: true, value: fullAddress);
           _locationStatus = 'Origen actualizado con direccion real.';
         } else {
           _lastDropoffResolvedQuery = address;
           _lastDropoffDisambiguationQuery = null;
-          _dropoffController.text = address;
+          _setAddressControllerText(isPickup: false, value: fullAddress);
           _locationStatus = 'Destino actualizado con direccion real.';
         }
         _setAddressValidationFeedbackValues(
@@ -3882,15 +4365,9 @@ class _RideScreenState extends State<RideScreen> {
         );
       });
 
-      await _rememberRecentAddress(
-        GeocodeSuggestion(
-            displayName: address, lat: point.latitude, lng: point.longitude),
-      );
-      await _saveLastAddress(
-        GeocodeSuggestion(
-            displayName: address, lat: point.latitude, lng: point.longitude),
-        isPickup: isPickup,
-      );
+      await _rememberRecentAddress(geocodeSuggestion);
+      await _saveLastAddress(geocodeSuggestion, isPickup: isPickup);
+      _syncDistanceFromMap();
     } catch (_) {
       if (!mounted) {
         return;
@@ -3912,10 +4389,10 @@ class _RideScreenState extends State<RideScreen> {
     final query = isPickup
         ? _pickupController.text.trim()
         : _dropoffController.text.trim();
-    if (query.length < 3) {
+    if (query.length < 2) {
       setState(() {
         _locationStatus =
-            'Escribe al menos 3 caracteres para buscar direcciones.';
+            'Escribe al menos 2 caracteres para buscar direcciones.';
       });
       return;
     }
@@ -4002,13 +4479,15 @@ class _RideScreenState extends State<RideScreen> {
       setState(() {
         _pickupPoint = point;
         _currentDevicePoint = point;
-        _pickupController.text = _formatCoordsLabel('Mi ubicacion', point);
+        _setAddressControllerText(
+          isPickup: true,
+          value: _formatCoordsLabel('Mi ubicacion', point),
+        );
         _controller.setPickupPoint(point.latitude, point.longitude);
         _locationStatus = 'Ubicacion detectada correctamente.';
       });
 
       _moveMapWhenReady(point, 14);
-      _syncDistanceFromMap();
       await _resolveAddress(point: point, isPickup: true);
       final resolvedAddress = _pickupController.text.trim();
       if (mounted &&
@@ -4018,6 +4497,7 @@ class _RideScreenState extends State<RideScreen> {
           _currentLocationLabel = resolvedAddress;
         });
       }
+      _syncDistanceFromMap();
     } catch (_) {
       if (!mounted) {
         return;
@@ -4252,7 +4732,8 @@ class _RideScreenState extends State<RideScreen> {
             SingleActivator(LogicalKeyboardKey.keyL, control: true):
                 _KarrytShortcutIntent('useLocation'),
             SingleActivator(LogicalKeyboardKey.keyS,
-                control: true, shift: true): _KarrytShortcutIntent('scheduleRide'),
+                control: true,
+                shift: true): _KarrytShortcutIntent('scheduleRide'),
             SingleActivator(LogicalKeyboardKey.slash, shift: true):
                 _KarrytShortcutIntent('openCommands'),
           },
@@ -4284,194 +4765,202 @@ class _RideScreenState extends State<RideScreen> {
             child: Focus(
               autofocus: true,
               child: Scaffold(
-          appBar: AppBar(
-            elevation: 4,
-            shadowColor: Colors.black.withValues(alpha: 0.2),
-            toolbarHeight: 74,
-            flexibleSpace: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF0F4CFF),
-                    const Color(0xFF0F4CFF).withValues(alpha: 0.85),
-                  ],
-                ),
-              ),
-            ),
-            titleSpacing: 12,
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  'Karryt',
-                  style: TextStyle(
-                    fontSize: 38,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 18),
-                  child: Transform.translate(
-                    offset: const Offset(0, -8),
-                    child: const Text(
-                      'Mueve',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        height: 0.95,
-                        color: Colors.white70,
-                      ),
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.clip,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              IconButton(
-                tooltip: 'Comandos y atajos',
-                onPressed: _showRideCommandMenu,
-                icon: const Icon(Icons.keyboard_command_key),
-              ),
-            ],
-          ),
-          body: _controller.loading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _controller.init,
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: (notification) {
-                      if (notification.metrics.axis == Axis.vertical &&
-                          notification.depth == 0) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            _syncNavIndexFromScroll();
-                          }
-                        });
-                      }
-                      return false;
-                    },
-                    child: ListView(
-                      controller: _pageScrollController,
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        if (_controller.error != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red.shade200),
-                            ),
-                            child: Text(_controller.error!,
-                                style: TextStyle(color: Colors.red.shade700)),
-                          ),
-                          const SizedBox(height: 12),
+                appBar: AppBar(
+                  elevation: 4,
+                  shadowColor: Colors.black.withValues(alpha: 0.2),
+                  toolbarHeight: 74,
+                  flexibleSpace: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          const Color(0xFF0F4CFF),
+                          const Color(0xFF0F4CFF).withValues(alpha: 0.85),
                         ],
-                        KeyedSubtree(
-                            key: _requestSectionKey,
-                            child: _buildRequestCard()),
-                        const SizedBox(height: 16),
-                        _buildRideCard(),
-                        const SizedBox(height: 16),
-                        KeyedSubtree(
-                            key: _pricingSectionKey,
-                            child: _buildPricingCard()),
-                        const SizedBox(height: 96),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-          bottomNavigationBar: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.22)),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.88),
-                        const Color(0xFFF4F8FF).withValues(alpha: 0.84),
-                      ],
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x220F1A2E),
-                        blurRadius: 24,
-                        offset: Offset(0, 10),
+                  titleSpacing: 12,
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Karryt',
+                        style: TextStyle(
+                          fontSize: 38,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 18),
+                        child: Transform.translate(
+                          offset: const Offset(0, -8),
+                          child: const Text(
+                            'Mueve',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              height: 0.95,
+                              color: Colors.white70,
+                            ),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.clip,
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  child: NavigationBarTheme(
-                    data: NavigationBarThemeData(
-                      backgroundColor: Colors.transparent,
-                      indicatorColor:
-                          const Color(0xFF0F4CFF).withValues(alpha: 0.16),
-                      labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                        final selected = states.contains(WidgetState.selected);
-                        return TextStyle(
-                          fontSize: 12,
-                          fontWeight:
-                              selected ? FontWeight.w800 : FontWeight.w700,
-                          color: selected
-                              ? const Color(0xFF0F4CFF)
-                              : const Color(0xFF5F6C80),
-                        );
-                      }),
-                      iconTheme: WidgetStateProperty.resolveWith((states) {
-                        final selected = states.contains(WidgetState.selected);
-                        return IconThemeData(
-                          color: selected
-                              ? const Color(0xFF0F4CFF)
-                              : const Color(0xFF5F6C80),
-                          size: selected ? 26 : 24,
-                        );
-                      }),
+                  actions: [
+                    IconButton(
+                      tooltip: 'Cerrar sesion',
+                      onPressed: _logoutUserSession,
+                      icon: const Icon(Icons.logout_rounded),
                     ),
-                    child: NavigationBar(
-                      selectedIndex: _currentNavIndex,
-                      elevation: 0,
-                      height: 72,
-                      labelBehavior:
-                          NavigationDestinationLabelBehavior.alwaysShow,
-                      onDestinationSelected: (index) {
-                        if (index == 0) {
-                          _scrollToSection(_requestSectionKey, 0);
-                        } else {
-                          _scrollToSection(_pricingSectionKey, 1);
-                        }
-                      },
-                      destinations: const [
-                        NavigationDestination(
-                          icon: Icon(Icons.local_shipping_outlined),
-                          selectedIcon: Icon(Icons.local_shipping),
-                          label: 'Solicitar',
+                    IconButton(
+                      tooltip: 'Comandos y atajos',
+                      onPressed: _showRideCommandMenu,
+                      icon: const Icon(Icons.keyboard_command_key),
+                    ),
+                  ],
+                ),
+                body: _controller.loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : RefreshIndicator(
+                        onRefresh: _controller.init,
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (notification.metrics.axis == Axis.vertical &&
+                                notification.depth == 0) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) {
+                                  _syncNavIndexFromScroll();
+                                }
+                              });
+                            }
+                            return false;
+                          },
+                          child: ListView(
+                            controller: _pageScrollController,
+                            padding: const EdgeInsets.all(16),
+                            children: [
+                              if (_controller.error != null) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border:
+                                        Border.all(color: Colors.red.shade200),
+                                  ),
+                                  child: Text(_controller.error!,
+                                      style: TextStyle(
+                                          color: Colors.red.shade700)),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              KeyedSubtree(
+                                  key: _requestSectionKey,
+                                  child: _buildRequestCard()),
+                              const SizedBox(height: 16),
+                              _buildRideCard(),
+                              const SizedBox(height: 96),
+                            ],
+                          ),
                         ),
-                        NavigationDestination(
-                          icon: Icon(Icons.receipt_long_outlined),
-                          selectedIcon: Icon(Icons.receipt_long),
-                          label: 'Tarifas',
+                      ),
+                bottomNavigationBar: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(28),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.22)),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.white.withValues(alpha: 0.88),
+                              const Color(0xFFF4F8FF).withValues(alpha: 0.84),
+                            ],
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x220F1A2E),
+                              blurRadius: 24,
+                              offset: Offset(0, 10),
+                            ),
+                          ],
                         ),
-                      ],
+                        child: NavigationBarTheme(
+                          data: NavigationBarThemeData(
+                            backgroundColor: Colors.transparent,
+                            indicatorColor:
+                                const Color(0xFF0F4CFF).withValues(alpha: 0.16),
+                            labelTextStyle:
+                                WidgetStateProperty.resolveWith((states) {
+                              final selected =
+                                  states.contains(WidgetState.selected);
+                              return TextStyle(
+                                fontSize: 12,
+                                fontWeight: selected
+                                    ? FontWeight.w800
+                                    : FontWeight.w700,
+                                color: selected
+                                    ? const Color(0xFF0F4CFF)
+                                    : const Color(0xFF5F6C80),
+                              );
+                            }),
+                            iconTheme:
+                                WidgetStateProperty.resolveWith((states) {
+                              final selected =
+                                  states.contains(WidgetState.selected);
+                              return IconThemeData(
+                                color: selected
+                                    ? const Color(0xFF0F4CFF)
+                                    : const Color(0xFF5F6C80),
+                                size: selected ? 26 : 24,
+                              );
+                            }),
+                          ),
+                          child: NavigationBar(
+                            selectedIndex: _currentNavIndex,
+                            elevation: 0,
+                            height: 72,
+                            labelBehavior:
+                                NavigationDestinationLabelBehavior.alwaysShow,
+                            onDestinationSelected: (index) {
+                              if (index == 0) {
+                                _scrollToSection(_requestSectionKey, 0);
+                              } else {
+                                _scrollToSection(_pricingSectionKey, 1);
+                              }
+                            },
+                            destinations: const [
+                              NavigationDestination(
+                                icon: Icon(Icons.local_shipping_outlined),
+                                selectedIcon: Icon(Icons.local_shipping),
+                                label: 'Solicitar',
+                              ),
+                              NavigationDestination(
+                                icon: Icon(Icons.receipt_long_outlined),
+                                selectedIcon: Icon(Icons.receipt_long),
+                                label: 'Tarifas',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
               ),
             ),
           ),
@@ -4519,8 +5008,6 @@ class _RideScreenState extends State<RideScreen> {
               const SizedBox(height: 12),
               _buildCategorySketchSelector(),
               const SizedBox(height: 10),
-              _buildServiceSelector(),
-              const SizedBox(height: 10),
               _buildAddressInput(isPickup: true),
               _buildAutocompleteSuggestions(isPickup: true),
               _buildAddressValidationHint(isPickup: true),
@@ -4564,47 +5051,14 @@ class _RideScreenState extends State<RideScreen> {
                   ),
                 ),
               ],
-              _buildSavedAddressChips(isPickup: true),
               const SizedBox(height: 10),
               _buildAddressInput(isPickup: false),
               _buildAutocompleteSuggestions(isPickup: false),
               _buildAddressValidationHint(isPickup: false),
-              _buildSavedAddressChips(isPickup: false),
               const SizedBox(height: 10),
               KeyedSubtree(
                 key: _routePreviewKey,
                 child: _buildRoutePreviewCard(),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        _pickFromSaved(favorites: false, isPickup: true),
-                    icon: const Icon(Icons.history),
-                    label: const Text('Reciente origen'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        _pickFromSaved(favorites: true, isPickup: true),
-                    icon: const Icon(Icons.star),
-                    label: const Text('Favorito origen'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        _pickFromSaved(favorites: false, isPickup: false),
-                    icon: const Icon(Icons.history),
-                    label: const Text('Reciente destino'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        _pickFromSaved(favorites: true, isPickup: false),
-                    icon: const Icon(Icons.star),
-                    label: const Text('Favorito destino'),
-                  ),
-                ],
               ),
               const SizedBox(height: 10),
               PremiumTextField(
@@ -4660,10 +5114,9 @@ class _RideScreenState extends State<RideScreen> {
                       child: EnhancedFilledButton(
                         onPressed: _pickScheduledAt,
                         icon: Icons.calendar_month,
-                        label:
-                          _scheduledAt == null
-                              ? 'Elegir fecha'
-                              : '${_scheduledAt!.day.toString().padLeft(2, '0')}/${_scheduledAt!.month.toString().padLeft(2, '0')}',
+                        label: _scheduledAt == null
+                            ? 'Elegir fecha'
+                            : '${_scheduledAt!.day.toString().padLeft(2, '0')}/${_scheduledAt!.month.toString().padLeft(2, '0')}',
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -4705,29 +5158,6 @@ class _RideScreenState extends State<RideScreen> {
                   ],
                 ),
               ],
-              const SizedBox(height: 6),
-              CheckboxListTile(
-                value: _notifyOfflineByWhatsApp,
-                onChanged: (value) {
-                  setState(() {
-                    _notifyOfflineByWhatsApp = value == true;
-                  });
-                },
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text('Notificar choferes fuera de linea por WhatsApp'),
-              ),
-              CheckboxListTile(
-                value: _notifyOfflineBySms,
-                onChanged: (value) {
-                  setState(() {
-                    _notifyOfflineBySms = value == true;
-                  });
-                },
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text('Notificar choferes fuera de linea por SMS'),
-              ),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -4775,7 +5205,7 @@ class _RideScreenState extends State<RideScreen> {
                               _routeLoading ||
                               _routeDistanceKm == null
                           ? null
-                        : _requestRideWithConfirmedRoute,
+                          : _requestRideWithConfirmedRoute,
                       icon: _rideRequestType == 'scheduled'
                           ? Icons.schedule_send_outlined
                           : Icons.local_shipping_outlined,
@@ -4796,6 +5226,11 @@ class _RideScreenState extends State<RideScreen> {
 
   Widget _buildRoutePreviewCard() {
     final hasPoints = _pickupPoint != null || _dropoffPoint != null;
+    final mapCenter = _pickupPoint ??
+        _dropoffPoint ??
+        _currentDevicePoint ??
+        _defaultCenter;
+    final initialZoom = hasPoints ? 14.5 : (_currentDevicePoint != null ? 14.0 : 11.5);
     final routeForDraw = _routePoints.length >= 2
         ? _routePoints
         : (_pickupPoint != null && _dropoffPoint != null)
@@ -4816,6 +5251,13 @@ class _RideScreenState extends State<RideScreen> {
           width: 34,
           height: 34,
           child: const Icon(Icons.flag, color: Colors.red, size: 28),
+        ),
+      if (!hasPoints && _currentDevicePoint != null)
+        Marker(
+          point: _currentDevicePoint!,
+          width: 28,
+          height: 28,
+          child: const Icon(Icons.my_location, color: Color(0xFF0F4CFF), size: 26),
         ),
     ];
 
@@ -4844,51 +5286,37 @@ class _RideScreenState extends State<RideScreen> {
             height: 230,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: hasPoints
-                  ? FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(
-                        initialCenter:
-                            _pickupPoint ?? _dropoffPoint ?? _defaultCenter,
-                        initialZoom: 12,
-                        onTap: _onMapTap,
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'Karryt.flutter',
+              child: FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: mapCenter,
+                  initialZoom: initialZoom,
+                  onTap: _mapEditingEnabled ? _onMapTap : null,
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'Karryt.flutter',
+                  ),
+                  if (routeForDraw.length >= 2)
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: routeForDraw,
+                          color: Colors.white,
+                          strokeWidth: 7,
                         ),
-                        if (routeForDraw.length >= 2)
-                          PolylineLayer(
-                            polylines: [
-                              Polyline(
-                                points: routeForDraw,
-                                color: Colors.white,
-                                strokeWidth: 7,
-                              ),
-                              Polyline(
-                                points: routeForDraw,
-                                color: const Color(0xFF0F4CFF),
-                                strokeWidth: 4.2,
-                              )
-                            ],
-                          ),
-                        MarkerLayer(markers: markers),
+                        Polyline(
+                          points: routeForDraw,
+                          color: const Color(0xFF0F4CFF),
+                          strokeWidth: 4.2,
+                        )
                       ],
-                    )
-                  : Container(
-                      color: const Color(0xFFF1F5F9),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        'Origen y destino vacios\n(Aparece al ingresar direcciones)',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
                     ),
+                  MarkerLayer(markers: markers),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -4899,18 +5327,23 @@ class _RideScreenState extends State<RideScreen> {
               ChoiceChip(
                 label: const Text('Editar origen en mapa'),
                 selected: _mapPickMode == MapPickMode.pickup,
-                onSelected: (_) =>
-                    setState(() => _mapPickMode = MapPickMode.pickup),
+                onSelected: (_) => setState(() {
+                  _mapPickMode = MapPickMode.pickup;
+                  _mapEditingEnabled = true;
+                }),
               ),
               ChoiceChip(
                 label: const Text('Editar destino en mapa'),
                 selected: _mapPickMode == MapPickMode.dropoff,
-                onSelected: (_) =>
-                    setState(() => _mapPickMode = MapPickMode.dropoff),
+                onSelected: (_) => setState(() {
+                  _mapPickMode = MapPickMode.dropoff;
+                  _mapEditingEnabled = true;
+                }),
               ),
             ],
           ),
           const SizedBox(height: 8),
+          const SizedBox(height: 4),
           if (_routeLoading) const LinearProgressIndicator(minHeight: 3),
           if (_routeDistanceKm != null)
             Text(
@@ -4919,7 +5352,7 @@ class _RideScreenState extends State<RideScreen> {
             ),
           if (eta != null)
             Text(
-              'Tiempo aproximado de llegada al destino (ajustado por trafico): $eta min',
+              'Tiempo estimado de traslado: $eta min',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           Text(
@@ -4934,13 +5367,14 @@ class _RideScreenState extends State<RideScreen> {
                 : 'Tiempo de descarga incluido 25 min a partir de haber llegado al destino.',
             style: const TextStyle(color: Color(0xFF1E3A8A), fontSize: 12),
           ),
-          if (_routeStatus != null)
+          if (_routeStatus != null &&
+              _routeStatus!.startsWith('Ruta confirmada'))
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 _routeStatus!,
                 style: TextStyle(
-                  color: Colors.orange.shade800,
+                  color: Colors.green.shade700,
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),
@@ -5458,10 +5892,120 @@ class _RideScreenState extends State<RideScreen> {
     }
   }
 
+  Widget _buildScheduledRideItem(RideData sr) {
+    final canCancel = sr.status == 'scheduled' || sr.status == 'searching';
+    final canDelete = sr.status == 'cancelled' || sr.status == 'completed';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.blue.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.schedule, size: 16, color: Color(0xFF1E3A8A)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  sr.scheduledAt != null
+                      ? 'Programado: ${formatScheduledAtLocal(sr.scheduledAt)}'
+                      : 'Viaje programado',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E3A8A),
+                      fontSize: 13),
+                ),
+              ),
+              StatusBadge(
+                label: statusToLabel(sr.status),
+                status: sr.status,
+                pulse: false,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text('${sr.pickup}  →  ${sr.dropoff}',
+              style: const TextStyle(fontSize: 12),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis),
+          Text('Categoría: ${sr.category}  |  ID: ${sr.id}',
+              style:
+                  const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (canCancel)
+                OutlinedButton(
+                  onPressed: () =>
+                      _controller.cancelScheduledRide(sr.id),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 4),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('Cancelar'),
+                ),
+              if (canDelete) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Eliminar viaje programado'),
+                        content: const Text(
+                            '¿Eliminar este registro del historial?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.of(ctx).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                          FilledButton(
+                            onPressed: () =>
+                                Navigator.of(ctx).pop(true),
+                            style: FilledButton.styleFrom(
+                                backgroundColor: Colors.red.shade600),
+                            child: const Text('Eliminar'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await _controller.deleteScheduledRide(sr.id);
+                    }
+                  },
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: const Text('Eliminar'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    side: BorderSide(color: Colors.red.shade300),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 4),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRideCard() {
     final ride = _controller.currentRide;
+    final scheduled = _controller.scheduledRides;
 
-    return Card(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -5544,8 +6088,8 @@ class _RideScreenState extends State<RideScreen> {
                 if (ride.riderRating != null)
                   Container(
                     width: double.infinity,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
                       color: Colors.green.shade50,
                       borderRadius: BorderRadius.circular(12),
@@ -5573,9 +6117,10 @@ class _RideScreenState extends State<RideScreen> {
                   )
                 else
                   FilledButton.icon(
-                    onPressed: !_controller.canRateCurrentRide || _submittingRideRating
-                        ? null
-                        : () => _openRideRatingDialog(ride),
+                    onPressed:
+                        !_controller.canRateCurrentRide || _submittingRideRating
+                            ? null
+                            : () => _openRideRatingDialog(ride),
                     icon: _submittingRideRating
                         ? const SizedBox(
                             width: 16,
@@ -5594,10 +6139,71 @@ class _RideScreenState extends State<RideScreen> {
                     _controller.canCancel ? _controller.cancelRide : null,
                 child: const Text('Cancelar viaje'),
               ),
+              if (_controller.canDeleteRide) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Eliminar solicitud'),
+                        content: const Text(
+                          '¿Deseas eliminar este registro de tu historial? Esta acción no se puede deshacer.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.red.shade600,
+                            ),
+                            child: const Text('Eliminar'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await _controller.deleteCurrentRide();
+                    }
+                  },
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Eliminar solicitud'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    side: BorderSide(color: Colors.red.shade300),
+                  ),
+                ),
+              ],
             ],
           ],
         ),
       ),
+    ),
+        // ── Viajes Programados ──────────────────────────────────────────
+        if (scheduled.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Viajes Programados',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
+                  ...scheduled.map(_buildScheduledRideItem),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -5682,7 +6288,8 @@ class _RideScreenState extends State<RideScreen> {
     });
 
     try {
-      await _controller.submitRideRating(score: selectedScore, comment: comment);
+      await _controller.submitRideRating(
+          score: selectedScore, comment: comment);
       if (!mounted) {
         return;
       }
@@ -5707,24 +6314,25 @@ class _RideScreenState extends State<RideScreen> {
     final confirmed =
         isPickup ? _pickupAddressConfirmed : _dropoffAddressConfirmed;
     final approximate =
-      isPickup ? _pickupAddressApproximate : _dropoffAddressApproximate;
-    final hasAcceptedPoint = isPickup ? _pickupPoint != null : _dropoffPoint != null;
+        isPickup ? _pickupAddressApproximate : _dropoffAddressApproximate;
+    final hasAcceptedPoint =
+        isPickup ? _pickupPoint != null : _dropoffPoint != null;
     final query =
-      (isPickup ? _pickupController.text : _dropoffController.text).trim();
+        (isPickup ? _pickupController.text : _dropoffController.text).trim();
 
     if (message == null || message.trim().isEmpty) {
       return const SizedBox.shrink();
     }
 
     final color = approximate
-      ? Colors.orange.shade900
-      : (confirmed ? Colors.green.shade700 : Colors.orange.shade800);
+        ? Colors.orange.shade900
+        : (confirmed ? Colors.green.shade700 : Colors.orange.shade800);
     final background = approximate
-      ? Colors.orange.shade50
-      : (confirmed ? Colors.green.shade50 : Colors.orange.shade50);
+        ? Colors.orange.shade50
+        : (confirmed ? Colors.green.shade50 : Colors.orange.shade50);
     final border = approximate
-      ? Colors.orange.shade100
-      : (confirmed ? Colors.green.shade100 : Colors.orange.shade100);
+        ? Colors.orange.shade100
+        : (confirmed ? Colors.green.shade100 : Colors.orange.shade100);
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -5806,16 +6414,21 @@ class _RideScreenState extends State<RideScreen> {
   }
 
   Widget _buildAutocompleteSuggestions({required bool isPickup}) {
-    final suggestions =
-        isPickup ? _pickupAutocompleteSuggestions : _dropoffAutocompleteSuggestions;
+    final suggestions = isPickup
+        ? _pickupAutocompleteSuggestions
+        : _dropoffAutocompleteSuggestions;
     final loading =
         isPickup ? _loadingPickupAutocomplete : _loadingDropoffAutocomplete;
     final hasFocus =
-      isPickup ? _pickupFocusNode.hasFocus : _dropoffFocusNode.hasFocus;
+        isPickup ? _pickupFocusNode.hasFocus : _dropoffFocusNode.hasFocus;
     final query =
         (isPickup ? _pickupController.text : _dropoffController.text).trim();
 
-    if (!hasFocus || query.length < 3) {
+    if (query.length < 2) {
+      return const SizedBox.shrink();
+    }
+
+    if (!hasFocus && suggestions.isEmpty && !loading) {
       return const SizedBox.shrink();
     }
 
@@ -5863,81 +6476,79 @@ class _RideScreenState extends State<RideScreen> {
           ],
         ),
         child: Column(
-          children: suggestions
-              .take(5)
-              .map((item) {
-                final subtitle =
-                    _buildSuggestionSubtitle(item, isPickup: isPickup);
-                final numberHint =
-                    _buildNumberMatchHint(query: query, suggestion: item);
-                final numberShort = numberHint.label == null
-                    ? null
-                    : (numberHint.label!.contains('confirmado') &&
-                            !numberHint.label!.contains('no confirmado')
-                        ? 'N° OK'
-                        : (numberHint.label!.contains('parcial')
-                            ? 'N° ?'
-                            : 'N° X'));
-                final titleText = numberShort == null
-                    ? (item.primaryText ?? item.displayName)
-                    : '$numberShort  ${item.primaryText ?? item.displayName}';
+          children: suggestions.take(5).map((item) {
+            final subtitle = _buildSuggestionSubtitle(item, isPickup: isPickup);
+            final numberHint =
+                _buildNumberMatchHint(query: query, suggestion: item);
+            final numberShort = numberHint.label == null
+                ? null
+                : (numberHint.label!.contains('confirmado') &&
+                        !numberHint.label!.contains('no confirmado')
+                    ? 'N° OK'
+                    : (numberHint.label!.contains('parcial')
+                        ? 'N° ?'
+                        : 'N° X'));
+            final titleText = numberShort == null
+                ? (item.primaryText ?? item.displayName)
+                : '$numberShort  ${item.primaryText ?? item.displayName}';
 
-                final subtitleParts = <String>[];
-                if (subtitle != null && subtitle.isNotEmpty) {
-                  subtitleParts.add(subtitle);
-                }
-                if (numberHint.label != null) {
-                  subtitleParts.add(numberHint.label!);
-                }
+            final subtitleParts = <String>[];
+            if (subtitle != null && subtitle.isNotEmpty) {
+              subtitleParts.add(subtitle);
+            }
+            if (numberHint.label != null) {
+              subtitleParts.add(numberHint.label!);
+            }
 
-                return Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(
-                        Icons.search_rounded,
-                        color: Color(0xFF0F4CFF),
-                      ),
-                      title: Text(
-                        titleText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1F2937),
-                        ),
-                      ),
-                      subtitle: subtitleParts.isEmpty
-                          ? null
-                          : Text(
-                              subtitleParts.join(' • '),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                      trailing: IconButton(
-                        onPressed: () => _toggleFavoriteAddress(item),
-                        icon: Icon(
-                          _isFavoriteAddress(item)
-                              ? Icons.star
-                              : Icons.star_border,
-                          size: 20,
-                          color: _isFavoriteAddress(item)
-                              ? const Color(0xFFF59E0B)
-                              : Colors.blueGrey.shade400,
-                        ),
-                        tooltip: 'Guardar favorita',
-                      ),
-                      onTap: () => _applySuggestion(
-                        item,
-                        isPickup: isPickup,
-                        typedQuery: query,
-                      ),
+            return Column(
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    Icons.search_rounded,
+                    color: Color(0xFF0F4CFF),
+                  ),
+                  title: Text(
+                    titleText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1F2937),
                     ),
-                    if (item != suggestions.take(5).last)
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                  ],
-                );
-              })
-              .toList(growable: false),
+                  ),
+                  subtitle: subtitleParts.isEmpty
+                      ? null
+                      : Text(
+                          subtitleParts.join('\n'),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                  trailing: IconButton(
+                    onPressed: () => _toggleFavoriteAddress(item),
+                    icon: Icon(
+                      _isFavoriteAddress(item) ? Icons.star : Icons.star_border,
+                      size: 20,
+                      color: _isFavoriteAddress(item)
+                          ? const Color(0xFFF59E0B)
+                          : Colors.blueGrey.shade400,
+                    ),
+                    tooltip: 'Guardar favorita',
+                  ),
+                  onTap: () => _applySuggestion(
+                    item,
+                    isPickup: isPickup,
+                    typedQuery: query,
+                  ),
+                ),
+                if (item != suggestions.take(5).last)
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+              ],
+            );
+          }).toList(growable: false),
         ),
       ),
     );
@@ -5977,10 +6588,10 @@ class _RideScreenState extends State<RideScreen> {
                         (row) => DataRow(
                           cells: [
                             DataCell(Text(row.categoryLabel)),
-                            DataCell(
-                                Text('MXN ${row.startFare.toStringAsFixed(0)}')),
-                            DataCell(
-                                Text('MXN ${row.perKmRate.toStringAsFixed(0)}')),
+                            DataCell(Text(
+                                'MXN ${row.startFare.toStringAsFixed(0)}')),
+                            DataCell(Text(
+                                'MXN ${row.perKmRate.toStringAsFixed(0)}')),
                             DataCell(Text(
                                 'MXN ${row.waitPerMinRate.toStringAsFixed(0)}')),
                           ],
@@ -6031,7 +6642,6 @@ class _CategorySketchPalette {
   final _VehicleSketchKind kind;
   final Color strokeColor;
   final Color accentColor;
-
 }
 
 class _VehicleSketchPainter extends CustomPainter {
@@ -6426,19 +7036,29 @@ enum _AdminModule {
 
 class _AdminScreenState extends State<AdminScreen> {
   late final ApiClient _apiClient;
+  static const String _adminIdFromEnv =
+      String.fromEnvironment('KARRYT_ADMIN_ID', defaultValue: 'ADM-1000');
+  static const String _authBearerFromEnv =
+      String.fromEnvironment('KARRYT_AUTH_BEARER', defaultValue: '');
+  static const String _authDevSharedKeyFromEnv =
+      String.fromEnvironment('AUTH_DEV_SHARED_KEY', defaultValue: '');
   static const List<int> _adminStatementWindowOptions = [7, 15, 30, 60, 90];
   static const List<int> _adminStatementLimitOptions = [100, 300, 500, 1000];
-  static const List<int> _adminStatementCsvLimitOptions = [500, 1000, 3000, 5000];
+  static const List<int> _adminStatementCsvLimitOptions = [
+    500,
+    1000,
+    3000,
+    5000
+  ];
   static const String _adminStatementWindowPrefsKey =
-    'admin.driverStatement.windowDays';
+      'admin.driverStatement.windowDays';
   static const String _adminStatementQueryLimitPrefsKey =
-    'admin.driverStatement.queryLimit';
+      'admin.driverStatement.queryLimit';
   static const String _adminStatementCsvLimitPrefsKey =
-    'admin.driverStatement.csvLimit';
+      'admin.driverStatement.csvLimit';
   static const String _adminStatementDriverIdPrefsKey =
-    'admin.driverStatement.driverId';
-  static const String _adminSelectedModulePrefsKey =
-    'admin.selectedModule';
+      'admin.driverStatement.driverId';
+  static const String _adminSelectedModulePrefsKey = 'admin.selectedModule';
 
   final Map<String, TextEditingController> _fields = {
     'foraneoThresholdKm': TextEditingController(),
@@ -6501,6 +7121,29 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _operationsTopRatedOnly = true;
   double _operationsMinRating = 4.5;
   int _operationsMinRatingCount = 3;
+  bool _simulatingDriver = false;
+  String? _simulateDriverResult;
+
+  // ── Multiplicadores ETA (tráfico + demanda) ────────────────────────────────
+  static const String _etaPeakPrefsKey = 'admin.eta.peakMultiplier';
+  static const String _etaModeratePrefsKey = 'admin.eta.moderateMultiplier';
+  static const String _etaBasePrefsKey = 'admin.eta.baseMultiplier';
+  static const String _etaSurgeEnabledPrefsKey = 'admin.eta.surgeEnabled';
+  static const String _etaSurgeMultiplierPrefsKey = 'admin.eta.surgeMultiplier';
+  static const String _etaSurgeThresholdPrefsKey = 'admin.eta.surgeThreshold';
+
+  final TextEditingController _etaPeakCtrl =
+      TextEditingController(text: '2.0');
+  final TextEditingController _etaModerateCtrl =
+      TextEditingController(text: '1.8');
+  final TextEditingController _etaBaseCtrl =
+      TextEditingController(text: '1.6');
+  final TextEditingController _etaSurgeMultiplierCtrl =
+      TextEditingController(text: '1.3');
+  final TextEditingController _etaSurgeThresholdCtrl =
+      TextEditingController(text: '0.8');
+  bool _etaSurgeEnabled = false;
+  // ───────────────────────────────────────────────────────────────────────────
 
   final TextEditingController _apiMonthlyConfirmedRidesController =
       TextEditingController(text: '300');
@@ -6515,95 +7158,111 @@ class _AdminScreenState extends State<AdminScreen> {
   final TextEditingController _apiRoutesPricePerThousandController =
       TextEditingController(text: '0');
 
-    final TextEditingController _vehiclePlateController = TextEditingController();
-    final TextEditingController _vehicleUnitNumberController =
+  final TextEditingController _vehiclePlateController = TextEditingController();
+  final TextEditingController _vehicleUnitNumberController =
       TextEditingController();
-    final TextEditingController _vehicleBodyTypeController =
+  final TextEditingController _vehicleBodyTypeController =
       TextEditingController();
-    final TextEditingController _vehicleBrandController = TextEditingController();
-    final TextEditingController _vehicleModelController = TextEditingController();
-    final TextEditingController _vehicleYearController = TextEditingController();
-    final TextEditingController _vehicleColorController = TextEditingController();
-    final TextEditingController _vehicleCapacityKgController =
+  final TextEditingController _vehicleBrandController = TextEditingController();
+  final TextEditingController _vehicleModelController = TextEditingController();
+  final TextEditingController _vehicleYearController = TextEditingController();
+  final TextEditingController _vehicleColorController = TextEditingController();
+  final TextEditingController _vehicleCapacityKgController =
       TextEditingController();
-    final TextEditingController _vehicleVolumeM3Controller =
+  final TextEditingController _vehicleVolumeM3Controller =
       TextEditingController();
-    final TextEditingController _vehicleOwnerController = TextEditingController();
-    final TextEditingController _vehicleOperatorController =
+  final TextEditingController _vehicleOwnerController = TextEditingController();
+  final TextEditingController _vehicleOperatorController =
       TextEditingController();
-    final TextEditingController _vehiclePhoneController = TextEditingController();
-    final TextEditingController _vehicleInsurancePolicyController =
+  final TextEditingController _vehiclePhoneController = TextEditingController();
+  final TextEditingController _vehicleInsurancePolicyController =
       TextEditingController();
-    final TextEditingController _vehicleInsuranceExpiryController =
+  final TextEditingController _vehicleInsuranceExpiryController =
       TextEditingController();
-    final TextEditingController _vehicleCirculationExpiryController =
+  final TextEditingController _vehicleCirculationExpiryController =
       TextEditingController();
-    final TextEditingController _vehicleVerificationExpiryController =
+  final TextEditingController _vehicleVerificationExpiryController =
       TextEditingController();
-    final TextEditingController _vehicleNotesController = TextEditingController();
-    final TextEditingController _vehicleSearchController = TextEditingController();
+  final TextEditingController _vehicleNotesController = TextEditingController();
+  final TextEditingController _vehicleSearchController =
+      TextEditingController();
 
-    final TextEditingController _driverFirstNameController = TextEditingController();
-    final TextEditingController _driverLastNameController = TextEditingController();
-    final TextEditingController _driverPhoneController = TextEditingController();
-    final TextEditingController _driverEmailController = TextEditingController();
-    final TextEditingController _driverCurpController = TextEditingController();
-    final TextEditingController _driverRfcController = TextEditingController();
-    final TextEditingController _driverBirthDateController = TextEditingController();
-    final TextEditingController _driverAddressController = TextEditingController();
-    final TextEditingController _driverMunicipalityController = TextEditingController();
-    final TextEditingController _driverEmergencyNameController = TextEditingController();
-    final TextEditingController _driverEmergencyPhoneController = TextEditingController();
-    final TextEditingController _driverLicenseNumberController = TextEditingController();
-    final TextEditingController _driverLicenseTypeController = TextEditingController();
-    final TextEditingController _driverLicenseExpiryController = TextEditingController();
-    final TextEditingController _driverBloodTypeController = TextEditingController();
-    final TextEditingController _driverNotesController = TextEditingController();
-    final TextEditingController _driverSearchController = TextEditingController();
-    final TextEditingController _catalogEntryController = TextEditingController();
-    final TextEditingController _driverPayoutAmountController = TextEditingController();
-    final TextEditingController _driverPayoutNoteController = TextEditingController();
-    final TextEditingController _driverAdjustmentAmountController = TextEditingController();
-    final TextEditingController _driverAdjustmentNoteController = TextEditingController();
+  final TextEditingController _driverFirstNameController =
+      TextEditingController();
+  final TextEditingController _driverLastNameController =
+      TextEditingController();
+  final TextEditingController _driverPhoneController = TextEditingController();
+  final TextEditingController _driverEmailController = TextEditingController();
+  final TextEditingController _driverCurpController = TextEditingController();
+  final TextEditingController _driverRfcController = TextEditingController();
+  final TextEditingController _driverBirthDateController =
+      TextEditingController();
+  final TextEditingController _driverAddressController =
+      TextEditingController();
+  final TextEditingController _driverMunicipalityController =
+      TextEditingController();
+  final TextEditingController _driverEmergencyNameController =
+      TextEditingController();
+  final TextEditingController _driverEmergencyPhoneController =
+      TextEditingController();
+  final TextEditingController _driverLicenseNumberController =
+      TextEditingController();
+  final TextEditingController _driverLicenseTypeController =
+      TextEditingController();
+  final TextEditingController _driverLicenseExpiryController =
+      TextEditingController();
+  final TextEditingController _driverBloodTypeController =
+      TextEditingController();
+  final TextEditingController _driverNotesController = TextEditingController();
+  final TextEditingController _driverSearchController = TextEditingController();
+  final TextEditingController _catalogEntryController = TextEditingController();
+  final TextEditingController _driverPayoutAmountController =
+      TextEditingController();
+  final TextEditingController _driverPayoutNoteController =
+      TextEditingController();
+  final TextEditingController _driverAdjustmentAmountController =
+      TextEditingController();
+  final TextEditingController _driverAdjustmentNoteController =
+      TextEditingController();
 
-    String _vehicleCategory = 'pickup_mini';
-    String _vehicleFilterCategory = 'all';
-    String _vehicleFilterStatus = 'all';
-    String _vehicleSortBy = 'updated_desc';
-    int _vehiclePage = 0;
-    bool _vehicleActive = true;
-    bool _loadingVehicles = false;
-    bool _savingVehicle = false;
-    String? _editingVehicleId;
-    Set<String> _selectedVehicleAccessories = <String>{};
+  String _vehicleCategory = 'pickup_mini';
+  String _vehicleFilterCategory = 'all';
+  String _vehicleFilterStatus = 'all';
+  String _vehicleSortBy = 'updated_desc';
+  int _vehiclePage = 0;
+  bool _vehicleActive = true;
+  bool _loadingVehicles = false;
+  bool _savingVehicle = false;
+  String? _editingVehicleId;
+  Set<String> _selectedVehicleAccessories = <String>{};
 
-    String _driverCategory = 'pickup_mini';
-    String _driverFilterCategory = 'all';
-    String _driverFilterStatus = 'all';
-    String _driverSortBy = 'updated_desc';
-    int _driverPage = 0;
-    bool _driverActive = true;
-    bool _driverAvailable = false;
-    bool _loadingDrivers = false;
-    bool _loadingDriverAudit = false;
-    bool _savingDriver = false;
-    String? _editingDriverId;
-    Set<String> _selectedDriverVehicleIds = <String>{};
-    Set<String> _selectedDriverSkills = <String>{};
-    Map<String, bool> _driverDocuments = {
-      'ine': false,
-      'licencia_vigente': false,
-      'comprobante_domicilio': false,
-      'carta_antecedentes': false,
-      'contrato_firmado': false,
-      'capacitacion_aprobada': false,
-      'seguro_vigente': false,
-      'examen_medico': false,
-    };
-    String _selectedCatalogKey = 'driver_skills';
-    bool _savingCatalogEntry = false;
-    String? _recentlyReorderedCatalogItem;
-    String _driverAdjustmentKind = 'credit';
+  String _driverCategory = 'pickup_mini';
+  String _driverFilterCategory = 'all';
+  String _driverFilterStatus = 'all';
+  String _driverSortBy = 'updated_desc';
+  int _driverPage = 0;
+  bool _driverActive = true;
+  bool _driverAvailable = false;
+  bool _loadingDrivers = false;
+  bool _loadingDriverAudit = false;
+  bool _savingDriver = false;
+  String? _editingDriverId;
+  Set<String> _selectedDriverVehicleIds = <String>{};
+  Set<String> _selectedDriverSkills = <String>{};
+  Map<String, bool> _driverDocuments = {
+    'ine': false,
+    'licencia_vigente': false,
+    'comprobante_domicilio': false,
+    'carta_antecedentes': false,
+    'contrato_firmado': false,
+    'capacitacion_aprobada': false,
+    'seguro_vigente': false,
+    'examen_medico': false,
+  };
+  String _selectedCatalogKey = 'driver_skills';
+  bool _savingCatalogEntry = false;
+  String? _recentlyReorderedCatalogItem;
+  String _driverAdjustmentKind = 'credit';
 
   bool _loading = true;
   bool _loadingRides = false;
@@ -6615,14 +7274,62 @@ class _AdminScreenState extends State<AdminScreen> {
   @override
   void initState() {
     super.initState();
-    _apiClient = ApiClient(resolveApiBaseUrl());
+    _apiClient = ApiClient(
+      resolveApiBaseUrl(),
+      authContext: ApiAuthContext.admin(
+        userId: _adminIdFromEnv,
+        bearerToken: _authBearerFromEnv.isNotEmpty ? _authBearerFromEnv : null,
+        devAuthKey: _authDevSharedKeyFromEnv.isNotEmpty
+            ? _authDevSharedKeyFromEnv
+            : null,
+      ),
+    );
     unawaited(_initializeAdminScreen());
   }
 
   Future<void> _initializeAdminScreen() async {
     await _restoreAdminStatementPreferences();
     await _restoreAdminDensityPreference();
+    await _restoreEtaMultipliersAdmin();
     await _load();
+  }
+
+  Future<void> _restoreEtaMultipliersAdmin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        final peak = prefs.getDouble(_etaPeakPrefsKey);
+        final moderate = prefs.getDouble(_etaModeratePrefsKey);
+        final base = prefs.getDouble(_etaBasePrefsKey);
+        final surge = prefs.getDouble(_etaSurgeMultiplierPrefsKey);
+        final threshold = prefs.getDouble(_etaSurgeThresholdPrefsKey);
+        final surgeEnabled = prefs.getBool(_etaSurgeEnabledPrefsKey);
+        if (peak != null) _etaPeakCtrl.text = peak.toStringAsFixed(2);
+        if (moderate != null) _etaModerateCtrl.text = moderate.toStringAsFixed(2);
+        if (base != null) _etaBaseCtrl.text = base.toStringAsFixed(2);
+        if (surge != null) _etaSurgeMultiplierCtrl.text = surge.toStringAsFixed(2);
+        if (threshold != null) _etaSurgeThresholdCtrl.text = threshold.toStringAsFixed(2);
+        if (surgeEnabled != null) _etaSurgeEnabled = surgeEnabled;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveEtaMultipliers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final peak = double.tryParse(_etaPeakCtrl.text.trim());
+      final moderate = double.tryParse(_etaModerateCtrl.text.trim());
+      final base = double.tryParse(_etaBaseCtrl.text.trim());
+      final surge = double.tryParse(_etaSurgeMultiplierCtrl.text.trim());
+      final threshold = double.tryParse(_etaSurgeThresholdCtrl.text.trim());
+      if (peak != null) await prefs.setDouble(_etaPeakPrefsKey, peak);
+      if (moderate != null) await prefs.setDouble(_etaModeratePrefsKey, moderate);
+      if (base != null) await prefs.setDouble(_etaBasePrefsKey, base);
+      if (surge != null) await prefs.setDouble(_etaSurgeMultiplierPrefsKey, surge);
+      if (threshold != null) await prefs.setDouble(_etaSurgeThresholdPrefsKey, threshold);
+      await prefs.setBool(_etaSurgeEnabledPrefsKey, _etaSurgeEnabled);
+    } catch (_) {}
   }
 
   Future<void> _restoreAdminDensityPreference() async {
@@ -6685,13 +7392,16 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _saveAdminStatementPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_adminStatementWindowPrefsKey, _adminStatementWindowDays);
+      await prefs.setInt(
+          _adminStatementWindowPrefsKey, _adminStatementWindowDays);
       await prefs.setInt(
           _adminStatementQueryLimitPrefsKey, _adminStatementQueryLimit);
-      await prefs.setInt(_adminStatementCsvLimitPrefsKey, _adminStatementCsvLimit);
+      await prefs.setInt(
+          _adminStatementCsvLimitPrefsKey, _adminStatementCsvLimit);
       final selectedDriverId = _selectedDriverStatementId?.trim();
       if (selectedDriverId != null && selectedDriverId.isNotEmpty) {
-        await prefs.setString(_adminStatementDriverIdPrefsKey, selectedDriverId);
+        await prefs.setString(
+            _adminStatementDriverIdPrefsKey, selectedDriverId);
       } else {
         await prefs.remove(_adminStatementDriverIdPrefsKey);
       }
@@ -6878,6 +7588,44 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
+  Future<void> _simulateDriverAccept() async {
+    // Busca el primer viaje en búsqueda para simular aceptación
+    final targetRide = _rides.where((r) =>
+      r.status == 'searching' || r.status == 'pending_driver'
+    ).firstOrNull;
+
+    setState(() {
+      _simulatingDriver = true;
+      _simulateDriverResult = null;
+    });
+
+    try {
+      final result = await _apiClient.simulateDriverAccept(
+        rideId: targetRide?.id,
+      );
+      final driverName = (result['driver'] as Map?)?['name'] ?? 'Chofer Demo';
+      final rideId = (result['ride'] as Map?)?['id'] ?? '';
+      if (mounted) {
+        setState(() {
+          _simulateDriverResult = '✓ $driverName acepto el viaje ${rideId.toString().substring(0, 8)}...';
+        });
+        await _loadRides();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _simulateDriverResult = 'Error: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _simulatingDriver = false;
+        });
+      }
+    }
+  }
+
   Future<void> _loadGovernanceData() async {
     setState(() {
       _loadingGovernance = true;
@@ -6886,16 +7634,19 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final customers = await _apiClient.getAdminCustomers();
       final incidents = await _apiClient.getAdminIncidents(
-        subjectType:
-            _incidentFilterSubjectType == 'all' ? null : _incidentFilterSubjectType,
-        severity: _incidentFilterSeverity == 'all' ? null : _incidentFilterSeverity,
+        subjectType: _incidentFilterSubjectType == 'all'
+            ? null
+            : _incidentFilterSubjectType,
+        severity:
+            _incidentFilterSeverity == 'all' ? null : _incidentFilterSeverity,
         status: _incidentFilterStatus == 'all' ? null : _incidentFilterStatus,
         limit: 150,
       );
       final catalog = await _apiClient.getAdminIncidentsCatalog();
       final sanctions = await _apiClient.getAdminSanctions(
-        subjectType:
-            _sanctionFilterSubjectType == 'all' ? null : _sanctionFilterSubjectType,
+        subjectType: _sanctionFilterSubjectType == 'all'
+            ? null
+            : _sanctionFilterSubjectType,
         limit: 200,
       );
       if (!mounted) {
@@ -6929,15 +7680,16 @@ class _AdminScreenState extends State<AdminScreen> {
       if (_operationsTopRatedOnly && rating < _operationsMinRating) {
         return false;
       }
-      if (_operationsTopRatedOnly && driver.ratingCount < _operationsMinRatingCount) {
+      if (_operationsTopRatedOnly &&
+          driver.ratingCount < _operationsMinRatingCount) {
         return false;
       }
       return true;
     }).toList();
 
     source.sort((left, right) {
-      final byRating =
-          (double.tryParse(right.rating) ?? 0).compareTo(double.tryParse(left.rating) ?? 0);
+      final byRating = (double.tryParse(right.rating) ?? 0)
+          .compareTo(double.tryParse(left.rating) ?? 0);
       if (byRating != 0) {
         return byRating;
       }
@@ -6993,6 +7745,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
     try {
       await _apiClient.saveAdminPricingConfig(payload);
+      await _saveEtaMultipliers();
       _success = 'Configuracion guardada correctamente.';
       await _load();
     } catch (e) {
@@ -7055,7 +7808,8 @@ class _AdminScreenState extends State<AdminScreen> {
 
   double _avgTicket({List<RideData>? rides}) {
     final source = rides ?? _rides;
-    final completed = source.where((ride) => ride.status == 'completed').toList();
+    final completed =
+        source.where((ride) => ride.status == 'completed').toList();
     if (completed.isEmpty) {
       return 0;
     }
@@ -7099,7 +7853,8 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Set<String> _availableMunicipalities() {
     final values = _rides
-        .map((ride) => _extractMunicipality(ride.dropoff.isNotEmpty ? ride.dropoff : ride.pickup))
+        .map((ride) => _extractMunicipality(
+            ride.dropoff.isNotEmpty ? ride.dropoff : ride.pickup))
         .where((item) => item != 'sin dato')
         .toSet();
     return values;
@@ -7112,8 +7867,8 @@ class _AdminScreenState extends State<AdminScreen> {
       }
 
       if (_filterMunicipality != 'all') {
-        final municipality =
-            _extractMunicipality(ride.dropoff.isNotEmpty ? ride.dropoff : ride.pickup);
+        final municipality = _extractMunicipality(
+            ride.dropoff.isNotEmpty ? ride.dropoff : ride.pickup);
         if (municipality != _filterMunicipality) {
           return false;
         }
@@ -7122,16 +7877,16 @@ class _AdminScreenState extends State<AdminScreen> {
       final rideDate = _rideReferenceDate(ride);
       if (_filterStartDate != null) {
         if (rideDate == null ||
-            rideDate.isBefore(DateTime(
-                _filterStartDate!.year, _filterStartDate!.month, _filterStartDate!.day))) {
+            rideDate.isBefore(DateTime(_filterStartDate!.year,
+                _filterStartDate!.month, _filterStartDate!.day))) {
           return false;
         }
       }
 
       if (_filterEndDate != null) {
-        final endBoundary =
-            DateTime(_filterEndDate!.year, _filterEndDate!.month, _filterEndDate!.day)
-                .add(const Duration(days: 1));
+        final endBoundary = DateTime(_filterEndDate!.year,
+                _filterEndDate!.month, _filterEndDate!.day)
+            .add(const Duration(days: 1));
         if (rideDate == null || !rideDate.isBefore(endBoundary)) {
           return false;
         }
@@ -7205,8 +7960,14 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _buildOverviewSection() {
-    final active = _countRidesByStatus(
-      {'searching', 'scheduled', 'pending_driver', 'accepted', 'driver_arriving', 'in_progress'});
+    final active = _countRidesByStatus({
+      'searching',
+      'scheduled',
+      'pending_driver',
+      'accepted',
+      'driver_arriving',
+      'in_progress'
+    });
     final completed = _countRidesByStatus({'completed'});
     final incidents = _countRidesByStatus({'cancelled', 'no_drivers'});
 
@@ -7255,8 +8016,112 @@ class _AdminScreenState extends State<AdminScreen> {
           ],
         ),
         const SizedBox(height: 12),
+        _buildTestModeCard(),
+        const SizedBox(height: 12),
         _buildMonitoringCard(rides: _rides),
       ],
+    );
+  }
+
+  Widget _buildTestModeCard() {
+    final pendingRides = _rides.where((r) =>
+      r.status == 'searching' || r.status == 'pending_driver'
+    ).toList();
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.amber.shade300, width: 1.5),
+      ),
+      color: Colors.amber.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.science_outlined, color: Colors.amber.shade800),
+                const SizedBox(width: 8),
+                Text(
+                  'Modo Prueba — Simulación de Chofer',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.amber.shade900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Simula que un chofer acepta la próxima solicitud en búsqueda. '
+              'Útil para probar el flujo completo de viaje sin un chofer real.',
+              style: TextStyle(color: Colors.amber.shade900, fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              pendingRides.isEmpty
+                ? 'No hay solicitudes activas en espera de chofer.'
+                : 'Solicitudes en espera: ${pendingRides.length}',
+              style: TextStyle(
+                color: pendingRides.isEmpty
+                  ? Colors.grey.shade600
+                  : Colors.green.shade800,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            if (_simulateDriverResult != null) ...[
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _simulateDriverResult!.startsWith('Error')
+                    ? Colors.red.shade50
+                    : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _simulateDriverResult!.startsWith('Error')
+                      ? Colors.red.shade200
+                      : Colors.green.shade200,
+                  ),
+                ),
+                child: Text(
+                  _simulateDriverResult!,
+                  style: TextStyle(
+                    color: _simulateDriverResult!.startsWith('Error')
+                      ? Colors.red.shade800
+                      : Colors.green.shade800,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: (_simulatingDriver || pendingRides.isEmpty)
+                ? null
+                : _simulateDriverAccept,
+              icon: _simulatingDriver
+                ? const SizedBox(
+                    width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.play_circle_outline),
+              label: Text(_simulatingDriver
+                ? 'Simulando...'
+                : 'Simular aceptación de chofer'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.amber.shade700,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -7269,14 +8134,16 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Calificaciones de choferes',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 10),
                 if (_loadingRatingsDistribution)
                   const LinearProgressIndicator()
@@ -7292,7 +8159,8 @@ class _AdminScreenState extends State<AdminScreen> {
                         child: _buildAdminMetric(
                           icon: Icons.star_rounded,
                           label: 'Promedio global',
-                          value: _ratingsDistribution!.average.toStringAsFixed(2),
+                          value:
+                              _ratingsDistribution!.average.toStringAsFixed(2),
                           color: const Color(0xFFD97706),
                         ),
                       ),
@@ -7315,7 +8183,8 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                       ),
                       ...[5, 4, 3, 2, 1].map((star) {
-                        final count = _ratingsDistribution!.countByStar[star] ?? 0;
+                        final count =
+                            _ratingsDistribution!.countByStar[star] ?? 0;
                         return Chip(label: Text('$star estrellas: $count'));
                       }),
                     ],
@@ -7327,14 +8196,16 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Estado de cuenta de chofer',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 10,
@@ -7407,7 +8278,8 @@ class _AdminScreenState extends State<AdminScreen> {
                 if (_loadingDriverStatement)
                   const LinearProgressIndicator()
                 else if (_adminDriverAccountStatement == null)
-                  const Text('Selecciona un chofer para ver su estado de cuenta.')
+                  const Text(
+                      'Selecciona un chofer para ver su estado de cuenta.')
                 else ...[
                   Wrap(
                     spacing: 10,
@@ -7464,8 +8336,8 @@ class _AdminScreenState extends State<AdminScreen> {
                         width: 190,
                         child: TextField(
                           controller: _driverPayoutAmountController,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
                           decoration: const InputDecoration(
                             labelText: 'Monto liquidacion',
                             isDense: true,
@@ -7502,8 +8374,10 @@ class _AdminScreenState extends State<AdminScreen> {
                             labelText: 'Tipo ajuste',
                           ),
                           items: const [
-                            DropdownMenuItem(value: 'credit', child: Text('A favor')),
-                            DropdownMenuItem(value: 'debit', child: Text('A cargo')),
+                            DropdownMenuItem(
+                                value: 'credit', child: Text('A favor')),
+                            DropdownMenuItem(
+                                value: 'debit', child: Text('A cargo')),
                           ],
                           onChanged: (value) {
                             if (value == null) {
@@ -7519,8 +8393,8 @@ class _AdminScreenState extends State<AdminScreen> {
                         width: 190,
                         child: TextField(
                           controller: _driverAdjustmentAmountController,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
                           decoration: const InputDecoration(
                             labelText: 'Monto ajuste',
                             isDense: true,
@@ -7547,7 +8421,9 @@ class _AdminScreenState extends State<AdminScreen> {
                   if (_adminDriverAccountStatement!.entries.isEmpty)
                     const Text('Sin movimientos en el periodo actual.')
                   else
-                    ..._adminDriverAccountStatement!.entries.take(16).map((entry) {
+                    ..._adminDriverAccountStatement!.entries
+                        .take(16)
+                        .map((entry) {
                       final isCredit = entry.amount >= 0;
                       return ListTile(
                         dense: true,
@@ -7556,8 +8432,9 @@ class _AdminScreenState extends State<AdminScreen> {
                           isCredit
                               ? Icons.arrow_downward_rounded
                               : Icons.arrow_upward_rounded,
-                          color:
-                              isCredit ? Colors.green.shade700 : Colors.red.shade700,
+                          color: isCredit
+                              ? Colors.green.shade700
+                              : Colors.red.shade700,
                         ),
                         title: Text(_ledgerTypeLabelForAdmin(entry.type)),
                         subtitle: Text(
@@ -7582,14 +8459,16 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Choferes mejor calificados',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
@@ -7672,7 +8551,8 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -7682,10 +8562,12 @@ class _AdminScreenState extends State<AdminScreen> {
                   children: [
                     const Expanded(
                       child: Text('Clientes y riesgo',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w700)),
                     ),
                     IconButton(
-                      onPressed: _loadingGovernance ? null : _loadGovernanceData,
+                      onPressed:
+                          _loadingGovernance ? null : _loadGovernanceData,
                       icon: const Icon(Icons.refresh),
                     ),
                   ],
@@ -7712,7 +8594,8 @@ class _AdminScreenState extends State<AdminScreen> {
                       trailing: FilledButton.tonal(
                         onPressed: () => _toggleCustomerSuspension(
                             customer, !customer.suspended),
-                        child: Text(customer.suspended ? 'Reactivar' : 'Suspender'),
+                        child: Text(
+                            customer.suspended ? 'Reactivar' : 'Suspender'),
                       ),
                     );
                   }),
@@ -7723,14 +8606,16 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Incidencias operativas',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -7746,9 +8631,12 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                         items: const [
                           DropdownMenuItem(value: 'all', child: Text('Todos')),
-                          DropdownMenuItem(value: 'customer', child: Text('Cliente')),
-                          DropdownMenuItem(value: 'driver', child: Text('Chofer')),
-                          DropdownMenuItem(value: 'vehicle', child: Text('Vehiculo')),
+                          DropdownMenuItem(
+                              value: 'customer', child: Text('Cliente')),
+                          DropdownMenuItem(
+                              value: 'driver', child: Text('Chofer')),
+                          DropdownMenuItem(
+                              value: 'vehicle', child: Text('Vehiculo')),
                           DropdownMenuItem(value: 'trip', child: Text('Viaje')),
                         ],
                         onChanged: (value) {
@@ -7772,9 +8660,11 @@ class _AdminScreenState extends State<AdminScreen> {
                         items: const [
                           DropdownMenuItem(value: 'all', child: Text('Todas')),
                           DropdownMenuItem(value: 'baja', child: Text('Baja')),
-                          DropdownMenuItem(value: 'media', child: Text('Media')),
+                          DropdownMenuItem(
+                              value: 'media', child: Text('Media')),
                           DropdownMenuItem(value: 'alta', child: Text('Alta')),
-                          DropdownMenuItem(value: 'critica', child: Text('Critica')),
+                          DropdownMenuItem(
+                              value: 'critica', child: Text('Critica')),
                         ],
                         onChanged: (value) {
                           if (value == null) {
@@ -7796,10 +8686,14 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                         items: const [
                           DropdownMenuItem(value: 'all', child: Text('Todos')),
-                          DropdownMenuItem(value: 'open', child: Text('Abierta')),
-                          DropdownMenuItem(value: 'in_review', child: Text('En revision')),
-                          DropdownMenuItem(value: 'resolved', child: Text('Resuelta')),
-                          DropdownMenuItem(value: 'dismissed', child: Text('Descartada')),
+                          DropdownMenuItem(
+                              value: 'open', child: Text('Abierta')),
+                          DropdownMenuItem(
+                              value: 'in_review', child: Text('En revision')),
+                          DropdownMenuItem(
+                              value: 'resolved', child: Text('Resuelta')),
+                          DropdownMenuItem(
+                              value: 'dismissed', child: Text('Descartada')),
                         ],
                         onChanged: (value) {
                           if (value == null) {
@@ -7812,12 +8706,14 @@ class _AdminScreenState extends State<AdminScreen> {
                       ),
                     ),
                     FilledButton.tonalIcon(
-                      onPressed: _loadingGovernance ? null : _loadGovernanceData,
+                      onPressed:
+                          _loadingGovernance ? null : _loadGovernanceData,
                       icon: const Icon(Icons.filter_alt_outlined),
                       label: const Text('Aplicar filtros'),
                     ),
                     FilledButton.tonalIcon(
-                      onPressed: _loadingGovernance ? null : _exportIncidentsCsv,
+                      onPressed:
+                          _loadingGovernance ? null : _exportIncidentsCsv,
                       icon: const Icon(Icons.download_outlined),
                       label: const Text('Exportar CSV'),
                     ),
@@ -7829,7 +8725,8 @@ class _AdminScreenState extends State<AdminScreen> {
                     spacing: 6,
                     runSpacing: 6,
                     children: _incidentCatalog.entries
-                        .map((entry) => Chip(label: Text('${entry.key}: ${entry.value.length}')))
+                        .map((entry) => Chip(
+                            label: Text('${entry.key}: ${entry.value.length}')))
                         .toList(growable: false),
                   ),
                 const SizedBox(height: 8),
@@ -7863,18 +8760,22 @@ class _AdminScreenState extends State<AdminScreen> {
                           Wrap(
                             spacing: 6,
                             children: [
-                              Chip(label: Text('Severidad: ${incident.severity}')),
+                              Chip(
+                                  label:
+                                      Text('Severidad: ${incident.severity}')),
                               Chip(label: Text('Estado: ${incident.status}')),
                               FilledButton.tonal(
                                 onPressed: incident.status == 'resolved'
                                     ? null
-                                    : () => _setIncidentStatus(incident, 'resolved'),
+                                    : () => _setIncidentStatus(
+                                        incident, 'resolved'),
                                 child: const Text('Resolver'),
                               ),
                               FilledButton.tonal(
                                 onPressed: incident.status == 'dismissed'
                                     ? null
-                                    : () => _setIncidentStatus(incident, 'dismissed'),
+                                    : () => _setIncidentStatus(
+                                        incident, 'dismissed'),
                                 child: const Text('Descartar'),
                               ),
                             ],
@@ -7890,14 +8791,16 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Historial de sanciones',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -7914,9 +8817,12 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                         items: const [
                           DropdownMenuItem(value: 'all', child: Text('Todas')),
-                          DropdownMenuItem(value: 'customer', child: Text('Cliente')),
-                          DropdownMenuItem(value: 'driver', child: Text('Chofer')),
-                          DropdownMenuItem(value: 'vehicle', child: Text('Vehiculo')),
+                          DropdownMenuItem(
+                              value: 'customer', child: Text('Cliente')),
+                          DropdownMenuItem(
+                              value: 'driver', child: Text('Chofer')),
+                          DropdownMenuItem(
+                              value: 'vehicle', child: Text('Vehiculo')),
                         ],
                         onChanged: (value) {
                           if (value == null) {
@@ -7929,11 +8835,13 @@ class _AdminScreenState extends State<AdminScreen> {
                       ),
                     ),
                     FilledButton.tonal(
-                      onPressed: _loadingGovernance ? null : _loadGovernanceData,
+                      onPressed:
+                          _loadingGovernance ? null : _loadGovernanceData,
                       child: const Text('Filtrar'),
                     ),
                     FilledButton.tonalIcon(
-                      onPressed: _loadingGovernance ? null : _exportSanctionsCsv,
+                      onPressed:
+                          _loadingGovernance ? null : _exportSanctionsCsv,
                       icon: const Icon(Icons.download_outlined),
                       label: const Text('Exportar CSV'),
                     ),
@@ -7978,14 +8886,16 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Finanzas y desempeño',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 10,
@@ -8203,9 +9113,8 @@ class _AdminScreenState extends State<AdminScreen> {
       }
 
       setState(() {
-        _vehicleAccessoriesCatalog = accessories.isEmpty
-            ? _fallbackVehicleAccessories()
-            : accessories;
+        _vehicleAccessoriesCatalog =
+            accessories.isEmpty ? _fallbackVehicleAccessories() : accessories;
         _adminVehicles = vehicles;
       });
     } catch (e) {
@@ -8406,7 +9315,8 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> _toggleVehicleActive(AdminVehicle vehicle, bool active) async {
     try {
-      final updated = await _apiClient.setAdminVehicleActive(vehicle.id, active);
+      final updated =
+          await _apiClient.setAdminVehicleActive(vehicle.id, active);
       if (!mounted) {
         return;
       }
@@ -8425,12 +9335,15 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
-  Future<void> _toggleVehicleSuspension(AdminVehicle vehicle, bool suspended) async {
+  Future<void> _toggleVehicleSuspension(
+      AdminVehicle vehicle, bool suspended) async {
     try {
       final updated = await _apiClient.setAdminVehicleSuspension(
         id: vehicle.id,
         suspended: suspended,
-        reason: suspended ? 'Suspension operativa desde panel admin' : 'Reactivado por admin',
+        reason: suspended
+            ? 'Suspension operativa desde panel admin'
+            : 'Reactivado por admin',
       );
       if (!mounted) {
         return;
@@ -8457,7 +9370,8 @@ class _AdminScreenState extends State<AdminScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Eliminar vehiculo'),
-          content: Text('Se eliminara ${vehicle.plateNumber}. Esta accion no se puede deshacer.'),
+          content: Text(
+              'Se eliminara ${vehicle.plateNumber}. Esta accion no se puede deshacer.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -8482,7 +9396,8 @@ class _AdminScreenState extends State<AdminScreen> {
         return;
       }
       setState(() {
-        _adminVehicles = _adminVehicles.where((item) => item.id != vehicle.id).toList();
+        _adminVehicles =
+            _adminVehicles.where((item) => item.id != vehicle.id).toList();
         if (_editingVehicleId == vehicle.id) {
           _clearVehicleForm();
         }
@@ -8522,7 +9437,8 @@ class _AdminScreenState extends State<AdminScreen> {
   List<AdminVehicle> _filteredVehicles() {
     final search = _vehicleSearchController.text.trim().toLowerCase();
     return _adminVehicles.where((vehicle) {
-      if (_vehicleFilterCategory != 'all' && vehicle.category != _vehicleFilterCategory) {
+      if (_vehicleFilterCategory != 'all' &&
+          vehicle.category != _vehicleFilterCategory) {
         return false;
       }
 
@@ -8583,20 +9499,22 @@ class _AdminScreenState extends State<AdminScreen> {
     const pageSize = 8;
     final filteredVehicles = _sortedFilteredVehicles();
     final totalVehicles = filteredVehicles.length;
-    final pageCount = totalVehicles == 0 ? 1 : (totalVehicles / pageSize).ceil();
+    final pageCount =
+        totalVehicles == 0 ? 1 : (totalVehicles / pageSize).ceil();
     final currentPage = math.max(0, math.min(_vehiclePage, pageCount - 1));
     final startIndex = totalVehicles == 0 ? 0 : currentPage * pageSize;
-    final endIndex = totalVehicles == 0
-      ? 0
-      : math.min(startIndex + pageSize, totalVehicles);
-    final pageVehicles =
-      totalVehicles == 0 ? const <AdminVehicle>[] : filteredVehicles.sublist(startIndex, endIndex);
+    final endIndex =
+        totalVehicles == 0 ? 0 : math.min(startIndex + pageSize, totalVehicles);
+    final pageVehicles = totalVehicles == 0
+        ? const <AdminVehicle>[]
+        : filteredVehicles.sublist(startIndex, endIndex);
 
     return Column(
       children: [
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -8627,8 +9545,8 @@ class _AdminScreenState extends State<AdminScreen> {
                   children: [
                     _vehicleTextField(_vehiclePlateController, 'Placa *',
                         hint: 'ABC-123-D'),
-                    _vehicleTextField(_vehicleUnitNumberController,
-                        'Numero economico'),
+                    _vehicleTextField(
+                        _vehicleUnitNumberController, 'Numero economico'),
                     SizedBox(
                       width: 250,
                       child: DropdownButtonFormField<String>(
@@ -8658,30 +9576,32 @@ class _AdminScreenState extends State<AdminScreen> {
                         },
                       ),
                     ),
-                    _vehicleTextField(_vehicleBodyTypeController,
-                        'Tipo de carroceria',
+                    _vehicleTextField(
+                        _vehicleBodyTypeController, 'Tipo de carroceria',
                         hint: 'Plataforma, caja seca, redilas'),
                     _vehicleTextField(_vehicleBrandController, 'Marca'),
                     _vehicleTextField(_vehicleModelController, 'Modelo'),
                     _vehicleTextField(_vehicleYearController, 'Anio',
                         keyboardType: TextInputType.number),
                     _vehicleTextField(_vehicleColorController, 'Color'),
-                    _vehicleTextField(_vehicleCapacityKgController,
-                        'Capacidad (kg)',
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true)),
-                    _vehicleTextField(_vehicleVolumeM3Controller, 'Volumen (m3)',
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true)),
+                    _vehicleTextField(
+                        _vehicleCapacityKgController, 'Capacidad (kg)',
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true)),
+                    _vehicleTextField(
+                        _vehicleVolumeM3Controller, 'Volumen (m3)',
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true)),
                     _vehicleTextField(_vehicleOwnerController, 'Propietario'),
                     _vehicleTextField(
                         _vehicleOperatorController, 'Operador asignado'),
-                    _vehicleTextField(_vehiclePhoneController, 'Telefono contacto',
+                    _vehicleTextField(
+                        _vehiclePhoneController, 'Telefono contacto',
                         keyboardType: TextInputType.phone),
                     _vehicleTextField(
                         _vehicleInsurancePolicyController, 'Poliza de seguro'),
-                    _vehicleTextField(_vehicleInsuranceExpiryController,
-                        'Vencimiento seguro',
+                    _vehicleTextField(
+                        _vehicleInsuranceExpiryController, 'Vencimiento seguro',
                         hint: 'YYYY-MM-DD'),
                     _vehicleTextField(_vehicleCirculationExpiryController,
                         'Vencimiento tarjeta circulacion',
@@ -8689,7 +9609,8 @@ class _AdminScreenState extends State<AdminScreen> {
                     _vehicleTextField(_vehicleVerificationExpiryController,
                         'Vencimiento verificacion',
                         hint: 'YYYY-MM-DD'),
-                    _vehicleTextField(_vehicleNotesController, 'Notas operativas',
+                    _vehicleTextField(
+                        _vehicleNotesController, 'Notas operativas',
                         maxLines: 2, width: 510),
                   ],
                 ),
@@ -8749,7 +9670,8 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -8812,7 +9734,8 @@ class _AdminScreenState extends State<AdminScreen> {
                           ...categories.map(
                             (category) => DropdownMenuItem(
                               value: category,
-                              child: Text(_categoryLabels[category] ?? category),
+                              child:
+                                  Text(_categoryLabels[category] ?? category),
                             ),
                           ),
                         ],
@@ -9049,11 +9972,11 @@ class _AdminScreenState extends State<AdminScreen> {
                                 runSpacing: 6,
                                 children: vehicle.accessories
                                     .map((item) => Chip(
-                                          visualDensity:
-                                              VisualDensity.compact,
+                                          visualDensity: VisualDensity.compact,
                                           label: Text(
                                             _vehicleAccessoryLabel(item),
-                                            style: const TextStyle(fontSize: 12),
+                                            style:
+                                                const TextStyle(fontSize: 12),
                                           ),
                                         ))
                                     .toList(),
@@ -9122,7 +10045,8 @@ class _AdminScreenState extends State<AdminScreen> {
     final skills = catalogs['driver_skills'] ?? const <String>[];
 
     final nextDocuments = <String, bool>{};
-    final documentKeys = documents.isEmpty ? _driverDocuments.keys.toList() : documents;
+    final documentKeys =
+        documents.isEmpty ? _driverDocuments.keys.toList() : documents;
     for (final key in documentKeys) {
       nextDocuments[key] = _driverDocuments[key] ?? false;
     }
@@ -9227,7 +10151,8 @@ class _AdminScreenState extends State<AdminScreen> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
               child: const Text('Guardar'),
             ),
           ],
@@ -9282,7 +10207,8 @@ class _AdminScreenState extends State<AdminScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Eliminar entrada de catalogo'),
-          content: Text('Se eliminara "$item". Esta accion no se puede deshacer.'),
+          content:
+              Text('Se eliminara "$item". Esta accion no se puede deshacer.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -9464,7 +10390,9 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   int _driversWithoutVehicleCount() {
-    return _adminDrivers.where((driver) => driver.assignedVehicleIds.isEmpty).length;
+    return _adminDrivers
+        .where((driver) => driver.assignedVehicleIds.isEmpty)
+        .length;
   }
 
   int _driversLicenseExpiringCount({int withinDays = 30}) {
@@ -9521,7 +10449,8 @@ class _AdminScreenState extends State<AdminScreen> {
       }
       setState(() {
         _adminDrivers = drivers;
-        _driverSkillsCatalog = skills.isEmpty ? _fallbackDriverSkills() : skills;
+        _driverSkillsCatalog =
+            skills.isEmpty ? _fallbackDriverSkills() : skills;
         _driverAudit = audit;
         _selectedDriverStatementId = resolvedStatementId;
       });
@@ -9553,12 +10482,15 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
-  Future<void> _toggleDriverSuspension(AdminDriver driver, bool suspended) async {
+  Future<void> _toggleDriverSuspension(
+      AdminDriver driver, bool suspended) async {
     try {
       final updated = await _apiClient.setAdminDriverSuspension(
         id: driver.id,
         suspended: suspended,
-        reason: suspended ? 'Suspension operativa desde panel admin' : 'Reactivado por admin',
+        reason: suspended
+            ? 'Suspension operativa desde panel admin'
+            : 'Reactivado por admin',
       );
       if (!mounted) {
         return;
@@ -9579,12 +10511,15 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
-  Future<void> _toggleCustomerSuspension(AdminCustomer customer, bool suspended) async {
+  Future<void> _toggleCustomerSuspension(
+      AdminCustomer customer, bool suspended) async {
     try {
       final updated = await _apiClient.setAdminCustomerSuspension(
         id: customer.id,
         suspended: suspended,
-        reason: suspended ? 'Suspendido por seguridad operativa' : 'Reactivado por admin',
+        reason: suspended
+            ? 'Suspendido por seguridad operativa'
+            : 'Reactivado por admin',
       );
       if (!mounted) {
         return;
@@ -9671,7 +10606,8 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> _registerDriverPayoutFromAdmin() async {
     final driverId = (_selectedDriverStatementId ?? '').trim();
-    final amount = double.tryParse(_driverPayoutAmountController.text.trim()) ?? 0;
+    final amount =
+        double.tryParse(_driverPayoutAmountController.text.trim()) ?? 0;
     if (driverId.isEmpty || amount <= 0) {
       setState(() {
         _error = 'Selecciona chofer y captura monto de liquidacion mayor a 0.';
@@ -9706,7 +10642,8 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> _registerDriverAdjustmentFromAdmin() async {
     final driverId = (_selectedDriverStatementId ?? '').trim();
-    final amount = double.tryParse(_driverAdjustmentAmountController.text.trim()) ?? 0;
+    final amount =
+        double.tryParse(_driverAdjustmentAmountController.text.trim()) ?? 0;
     if (driverId.isEmpty || amount <= 0) {
       setState(() {
         _error = 'Selecciona chofer y captura monto de ajuste mayor a 0.';
@@ -9759,12 +10696,14 @@ class _AdminScreenState extends State<AdminScreen> {
       if (downloaded) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Descarga de estado de cuenta iniciada.')),
+            const SnackBar(
+                content: Text('Descarga de estado de cuenta iniciada.')),
           );
         }
         return;
       }
-      await _showCsvPreviewDialog(title: 'CSV estado de cuenta chofer', csv: csv);
+      await _showCsvPreviewDialog(
+          title: 'CSV estado de cuenta chofer', csv: csv);
     } catch (e) {
       if (!mounted) {
         return;
@@ -9821,7 +10760,8 @@ class _AdminScreenState extends State<AdminScreen> {
                 Navigator.of(context).pop();
                 if (mounted) {
                   ScaffoldMessenger.of(this.context).showSnackBar(
-                    const SnackBar(content: Text('CSV copiado al portapapeles.')),
+                    const SnackBar(
+                        content: Text('CSV copiado al portapapeles.')),
                   );
                 }
               },
@@ -9840,9 +10780,11 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _exportIncidentsCsv() async {
     try {
       final csv = await _apiClient.exportAdminIncidentsCsv(
-        subjectType:
-            _incidentFilterSubjectType == 'all' ? null : _incidentFilterSubjectType,
-        severity: _incidentFilterSeverity == 'all' ? null : _incidentFilterSeverity,
+        subjectType: _incidentFilterSubjectType == 'all'
+            ? null
+            : _incidentFilterSubjectType,
+        severity:
+            _incidentFilterSeverity == 'all' ? null : _incidentFilterSeverity,
         status: _incidentFilterStatus == 'all' ? null : _incidentFilterStatus,
         limit: 3000,
       );
@@ -9872,8 +10814,9 @@ class _AdminScreenState extends State<AdminScreen> {
   Future<void> _exportSanctionsCsv() async {
     try {
       final csv = await _apiClient.exportAdminSanctionsCsv(
-        subjectType:
-            _sanctionFilterSubjectType == 'all' ? null : _sanctionFilterSubjectType,
+        subjectType: _sanctionFilterSubjectType == 'all'
+            ? null
+            : _sanctionFilterSubjectType,
         limit: 3000,
       );
       final downloaded = await downloadCsvFile(
@@ -9983,10 +10926,12 @@ class _AdminScreenState extends State<AdminScreen> {
       _driverDocuments = {
         'ine': driver.documents['ine'] == true,
         'licencia_vigente': driver.documents['licencia_vigente'] == true,
-        'comprobante_domicilio': driver.documents['comprobante_domicilio'] == true,
+        'comprobante_domicilio':
+            driver.documents['comprobante_domicilio'] == true,
         'carta_antecedentes': driver.documents['carta_antecedentes'] == true,
         'contrato_firmado': driver.documents['contrato_firmado'] == true,
-        'capacitacion_aprobada': driver.documents['capacitacion_aprobada'] == true,
+        'capacitacion_aprobada':
+            driver.documents['capacitacion_aprobada'] == true,
         'seguro_vigente': driver.documents['seguro_vigente'] == true,
         'examen_medico': driver.documents['examen_medico'] == true,
       };
@@ -9998,7 +10943,10 @@ class _AdminScreenState extends State<AdminScreen> {
     final lastName = _driverLastNameController.text.trim();
     final phone = _driverPhoneController.text.trim();
     final license = _driverLicenseNumberController.text.trim();
-    if (firstName.isEmpty || lastName.isEmpty || phone.isEmpty || license.isEmpty) {
+    if (firstName.isEmpty ||
+        lastName.isEmpty ||
+        phone.isEmpty ||
+        license.isEmpty) {
       setState(() {
         _error =
             'Completa nombre, apellido, telefono y licencia para registrar chofer.';
@@ -10107,9 +11055,11 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
-  Future<void> _toggleDriverAvailability(AdminDriver driver, bool available) async {
+  Future<void> _toggleDriverAvailability(
+      AdminDriver driver, bool available) async {
     try {
-      final updated = await _apiClient.setAdminDriverAvailability(driver.id, available);
+      final updated =
+          await _apiClient.setAdminDriverAvailability(driver.id, available);
       if (!mounted) {
         return;
       }
@@ -10134,7 +11084,8 @@ class _AdminScreenState extends State<AdminScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Eliminar chofer'),
-          content: Text('Se eliminara a ${driver.fullName}. Esta accion no se puede deshacer.'),
+          content: Text(
+              'Se eliminara a ${driver.fullName}. Esta accion no se puede deshacer.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -10159,7 +11110,8 @@ class _AdminScreenState extends State<AdminScreen> {
         return;
       }
       setState(() {
-        _adminDrivers = _adminDrivers.where((item) => item.id != driver.id).toList();
+        _adminDrivers =
+            _adminDrivers.where((item) => item.id != driver.id).toList();
         if (_editingDriverId == driver.id) {
           _clearDriverForm();
         }
@@ -10186,7 +11138,8 @@ class _AdminScreenState extends State<AdminScreen> {
   List<AdminDriver> _filteredDrivers() {
     final search = _driverSearchController.text.trim().toLowerCase();
     return _adminDrivers.where((driver) {
-      if (_driverFilterCategory != 'all' && driver.category != _driverFilterCategory) {
+      if (_driverFilterCategory != 'all' &&
+          driver.category != _driverFilterCategory) {
         return false;
       }
 
@@ -10248,21 +11201,22 @@ class _AdminScreenState extends State<AdminScreen> {
     const pageSize = 8;
     final categories = _categoryLabels.keys.toList();
     final assignableVehicles = _adminVehicles
-        .where((vehicle) => vehicle.active && vehicle.category == _driverCategory)
+        .where(
+            (vehicle) => vehicle.active && vehicle.category == _driverCategory)
         .toList();
     final filteredDrivers = _sortedFilteredDrivers();
     final totalDrivers = filteredDrivers.length;
     final pageCount = totalDrivers == 0 ? 1 : (totalDrivers / pageSize).ceil();
     final currentPage = math.max(0, math.min(_driverPage, pageCount - 1));
     final startIndex = totalDrivers == 0 ? 0 : currentPage * pageSize;
-    final endIndex = totalDrivers == 0
-        ? 0
-        : math.min(startIndex + pageSize, totalDrivers);
+    final endIndex =
+        totalDrivers == 0 ? 0 : math.min(startIndex + pageSize, totalDrivers);
     final pageDrivers = totalDrivers == 0
         ? const <AdminDriver>[]
         : filteredDrivers.sublist(startIndex, endIndex);
     final activeDrivers = _adminDrivers.where((driver) => driver.active).length;
-    final availableDrivers = _adminDrivers.where((driver) => driver.available).length;
+    final availableDrivers =
+        _adminDrivers.where((driver) => driver.available).length;
     final missingDocs = _driversMissingDocumentsCount();
     final expiringLicenses = _driversLicenseExpiringCount();
     final withoutVehicle = _driversWithoutVehicleCount();
@@ -10323,7 +11277,8 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -10360,25 +11315,28 @@ class _AdminScreenState extends State<AdminScreen> {
                         keyboardType: TextInputType.emailAddress),
                     _vehicleTextField(_driverCurpController, 'CURP'),
                     _vehicleTextField(_driverRfcController, 'RFC'),
-                    _vehicleTextField(_driverBirthDateController,
-                        'Fecha nacimiento',
+                    _vehicleTextField(
+                        _driverBirthDateController, 'Fecha nacimiento',
                         hint: 'YYYY-MM-DD'),
-                    _vehicleTextField(_driverAddressController, 'Direccion', width: 510),
-                    _vehicleTextField(_driverMunicipalityController, 'Municipio'),
+                    _vehicleTextField(_driverAddressController, 'Direccion',
+                        width: 510),
+                    _vehicleTextField(
+                        _driverMunicipalityController, 'Municipio'),
                     _vehicleTextField(
                         _driverEmergencyNameController, 'Contacto emergencia'),
                     _vehicleTextField(
                         _driverEmergencyPhoneController, 'Telefono emergencia',
                         keyboardType: TextInputType.phone),
-                    _vehicleTextField(_driverLicenseNumberController,
-                        'No. licencia *'),
-                    _vehicleTextField(_driverLicenseTypeController,
-                        'Tipo de licencia',
+                    _vehicleTextField(
+                        _driverLicenseNumberController, 'No. licencia *'),
+                    _vehicleTextField(
+                        _driverLicenseTypeController, 'Tipo de licencia',
                         hint: 'B, C, E, Federal'),
-                    _vehicleTextField(_driverLicenseExpiryController,
-                        'Vigencia licencia',
+                    _vehicleTextField(
+                        _driverLicenseExpiryController, 'Vigencia licencia',
                         hint: 'YYYY-MM-DD'),
-                    _vehicleTextField(_driverBloodTypeController, 'Tipo sanguineo'),
+                    _vehicleTextField(
+                        _driverBloodTypeController, 'Tipo sanguineo'),
                     SizedBox(
                       width: 250,
                       child: DropdownButtonFormField<String>(
@@ -10393,7 +11351,8 @@ class _AdminScreenState extends State<AdminScreen> {
                             .map(
                               (category) => DropdownMenuItem(
                                 value: category,
-                                child: Text(_categoryLabels[category] ?? category),
+                                child:
+                                    Text(_categoryLabels[category] ?? category),
                               ),
                             )
                             .toList(),
@@ -10403,15 +11362,18 @@ class _AdminScreenState extends State<AdminScreen> {
                           }
                           setState(() {
                             _driverCategory = value;
-                            final allowedIds = _activeVehicleIdsByCategory(value);
-                            _selectedDriverVehicleIds = _selectedDriverVehicleIds
-                                .where((id) => allowedIds.contains(id))
-                                .toSet();
+                            final allowedIds =
+                                _activeVehicleIdsByCategory(value);
+                            _selectedDriverVehicleIds =
+                                _selectedDriverVehicleIds
+                                    .where((id) => allowedIds.contains(id))
+                                    .toSet();
                           });
                         },
                       ),
                     ),
-                    _vehicleTextField(_driverNotesController, 'Notas operativas',
+                    _vehicleTextField(
+                        _driverNotesController, 'Notas operativas',
                         width: 510, maxLines: 2),
                   ],
                 ),
@@ -10472,15 +11434,18 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
                 const SizedBox(height: 8),
                 if (assignableVehicles.isEmpty)
-                  const Text('No hay vehiculos activos disponibles en esta categoria.')
+                  const Text(
+                      'No hay vehiculos activos disponibles en esta categoria.')
                 else
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: assignableVehicles.map((vehicle) {
-                      final selected = _selectedDriverVehicleIds.contains(vehicle.id);
+                      final selected =
+                          _selectedDriverVehicleIds.contains(vehicle.id);
                       return FilterChip(
-                        label: Text('${vehicle.plateNumber} · ${vehicle.unitNumber.isEmpty ? 'sin unidad' : vehicle.unitNumber}'),
+                        label: Text(
+                            '${vehicle.plateNumber} · ${vehicle.unitNumber.isEmpty ? 'sin unidad' : vehicle.unitNumber}'),
                         selected: selected,
                         onSelected: (value) {
                           setState(() {
@@ -10509,64 +11474,64 @@ class _AdminScreenState extends State<AdminScreen> {
                         });
                       },
                     ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      SizedBox(
-                        width: 230,
-                        child: DropdownButtonFormField<int>(
-                          initialValue: _adminStatementQueryLimit,
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'Limite de consulta',
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        SizedBox(
+                          width: 230,
+                          child: DropdownButtonFormField<int>(
+                            initialValue: _adminStatementQueryLimit,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              labelText: 'Limite de consulta',
+                            ),
+                            items: _adminStatementLimitOptions
+                                .map((value) => DropdownMenuItem<int>(
+                                      value: value,
+                                      child: Text('$value movimientos'),
+                                    ))
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setState(() {
+                                _adminStatementQueryLimit = value;
+                              });
+                              unawaited(_saveAdminStatementPreferences());
+                              _loadDriverStatementForAdmin();
+                            },
                           ),
-                          items: _adminStatementLimitOptions
-                              .map((value) => DropdownMenuItem<int>(
-                                    value: value,
-                                    child: Text('$value movimientos'),
-                                  ))
-                              .toList(growable: false),
-                          onChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() {
-                              _adminStatementQueryLimit = value;
-                            });
-                            unawaited(_saveAdminStatementPreferences());
-                            _loadDriverStatementForAdmin();
-                          },
                         ),
-                      ),
-                      SizedBox(
-                        width: 230,
-                        child: DropdownButtonFormField<int>(
-                          initialValue: _adminStatementCsvLimit,
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'Limite de exportacion CSV',
+                        SizedBox(
+                          width: 230,
+                          child: DropdownButtonFormField<int>(
+                            initialValue: _adminStatementCsvLimit,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              labelText: 'Limite de exportacion CSV',
+                            ),
+                            items: _adminStatementCsvLimitOptions
+                                .map((value) => DropdownMenuItem<int>(
+                                      value: value,
+                                      child: Text('$value movimientos'),
+                                    ))
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setState(() {
+                                _adminStatementCsvLimit = value;
+                              });
+                              unawaited(_saveAdminStatementPreferences());
+                            },
                           ),
-                          items: _adminStatementCsvLimitOptions
-                              .map((value) => DropdownMenuItem<int>(
-                                    value: value,
-                                    child: Text('$value movimientos'),
-                                  ))
-                              .toList(growable: false),
-                          onChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() {
-                              _adminStatementCsvLimit = value;
-                            });
-                            unawaited(_saveAdminStatementPreferences());
-                          },
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                     CheckboxListTile(
                       contentPadding: EdgeInsets.zero,
                       value: _driverAvailable,
@@ -10595,7 +11560,8 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -10606,7 +11572,8 @@ class _AdminScreenState extends State<AdminScreen> {
                     const Expanded(
                       child: Text(
                         'Choferes registrados',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w700),
                       ),
                     ),
                     IconButton(
@@ -10656,7 +11623,8 @@ class _AdminScreenState extends State<AdminScreen> {
                           ...categories.map(
                             (category) => DropdownMenuItem(
                               value: category,
-                              child: Text(_categoryLabels[category] ?? category),
+                              child:
+                                  Text(_categoryLabels[category] ?? category),
                             ),
                           ),
                         ],
@@ -10684,8 +11652,10 @@ class _AdminScreenState extends State<AdminScreen> {
                         ),
                         items: const [
                           DropdownMenuItem(value: 'all', child: Text('Todos')),
-                          DropdownMenuItem(value: 'active', child: Text('Activos')),
-                          DropdownMenuItem(value: 'inactive', child: Text('Inactivos')),
+                          DropdownMenuItem(
+                              value: 'active', child: Text('Activos')),
+                          DropdownMenuItem(
+                              value: 'inactive', child: Text('Inactivos')),
                         ],
                         onChanged: (value) {
                           if (value == null) {
@@ -10718,8 +11688,10 @@ class _AdminScreenState extends State<AdminScreen> {
                             value: 'updated_asc',
                             child: Text('Mas antiguos'),
                           ),
-                          DropdownMenuItem(value: 'name_asc', child: Text('Nombre A-Z')),
-                          DropdownMenuItem(value: 'name_desc', child: Text('Nombre Z-A')),
+                          DropdownMenuItem(
+                              value: 'name_asc', child: Text('Nombre A-Z')),
+                          DropdownMenuItem(
+                              value: 'name_desc', child: Text('Nombre Z-A')),
                           DropdownMenuItem(
                             value: 'category_asc',
                             child: Text('Categoria A-Z'),
@@ -10821,7 +11793,8 @@ class _AdminScreenState extends State<AdminScreen> {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFFE3E8F2)),
+                              border:
+                                  Border.all(color: const Color(0xFFE3E8F2)),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -10830,16 +11803,19 @@ class _AdminScreenState extends State<AdminScreen> {
                                   children: [
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Hero(
-                                            tag: 'admin-driver-name-${driver.id}',
+                                            tag:
+                                                'admin-driver-name-${driver.id}',
                                             child: Material(
                                               color: Colors.transparent,
                                               child: Text(
                                                 '${driver.fullName} • $categoryLabel',
                                                 style: const TextStyle(
-                                                    fontWeight: FontWeight.w700),
+                                                    fontWeight:
+                                                        FontWeight.w700),
                                               ),
                                             ),
                                           ),
@@ -10877,7 +11853,8 @@ class _AdminScreenState extends State<AdminScreen> {
                                     ),
                                     IconButton(
                                       tooltip: 'Editar',
-                                      onPressed: () => _loadDriverToForm(driver),
+                                      onPressed: () =>
+                                          _loadDriverToForm(driver),
                                       icon: const Icon(Icons.edit_outlined),
                                     ),
                                     IconButton(
@@ -10888,8 +11865,10 @@ class _AdminScreenState extends State<AdminScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                Text('Telefono: ${driver.phone} • Licencia: ${driver.licenseNumber}'),
-                                Text('Correo: ${driver.email.isEmpty ? 'N/D' : driver.email}'),
+                                Text(
+                                    'Telefono: ${driver.phone} • Licencia: ${driver.licenseNumber}'),
+                                Text(
+                                    'Correo: ${driver.email.isEmpty ? 'N/D' : driver.email}'),
                                 if (driver.suspended)
                                   Text(
                                     'Suspendido: ${driver.suspensionReason.isEmpty ? 'sin motivo' : driver.suspensionReason}',
@@ -10904,7 +11883,8 @@ class _AdminScreenState extends State<AdminScreen> {
                                     Switch(
                                       value: driver.available,
                                       onChanged: (value) =>
-                                          _toggleDriverAvailability(driver, value),
+                                          _toggleDriverAvailability(
+                                              driver, value),
                                     ),
                                   ],
                                 ),
@@ -10915,10 +11895,12 @@ class _AdminScreenState extends State<AdminScreen> {
                                     runSpacing: 6,
                                     children: driver.assignedVehicleIds
                                         .map((id) => Chip(
-                                              visualDensity: VisualDensity.compact,
+                                              visualDensity:
+                                                  VisualDensity.compact,
                                               label: Text(
                                                 _vehicleNameById(id),
-                                                style: const TextStyle(fontSize: 12),
+                                                style: const TextStyle(
+                                                    fontSize: 12),
                                               ),
                                             ))
                                         .toList(),
@@ -10931,10 +11913,12 @@ class _AdminScreenState extends State<AdminScreen> {
                                     runSpacing: 6,
                                     children: driver.cargoSkills
                                         .map((skill) => Chip(
-                                              visualDensity: VisualDensity.compact,
+                                              visualDensity:
+                                                  VisualDensity.compact,
                                               label: Text(
                                                 _driverSkillLabel(skill),
-                                                style: const TextStyle(fontSize: 12),
+                                                style: const TextStyle(
+                                                    fontSize: 12),
                                               ),
                                             ))
                                         .toList(),
@@ -10954,7 +11938,8 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 12),
         Card(
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -10971,18 +11956,18 @@ class _AdminScreenState extends State<AdminScreen> {
                   const Text('Sin movimientos registrados aun.')
                 else
                   ..._driverAudit.take(25).map(
-                    (event) => SmartListTile(
-                      leading: const Icon(Icons.history, size: 18),
-                      title: Text(
-                        '${_driverAuditActionLabel(event.action)} · ${event.details.isEmpty ? 'Sin detalle' : event.details}',
-                        style: const TextStyle(fontSize: 13),
+                        (event) => SmartListTile(
+                          leading: const Icon(Icons.history, size: 18),
+                          title: Text(
+                            '${_driverAuditActionLabel(event.action)} · ${event.details.isEmpty ? 'Sin detalle' : event.details}',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            '${formatScheduledAtLocal(event.createdAt)} · ${event.actor}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
                       ),
-                      subtitle: Text(
-                        '${formatScheduledAtLocal(event.createdAt)} · ${event.actor}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -10992,7 +11977,8 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _buildCatalogManagerCard() {
-    final catalogItems = _adminCatalogItems[_selectedCatalogKey] ?? const <String>[];
+    final catalogItems =
+        _adminCatalogItems[_selectedCatalogKey] ?? const <String>[];
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -11052,7 +12038,8 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                 ),
                 EnhancedFilledButton(
-                  onPressed: _savingCatalogEntry ? null : _addCatalogEntryFromAdmin,
+                  onPressed:
+                      _savingCatalogEntry ? null : _addCatalogEntryFromAdmin,
                   icon: Icons.add,
                   isLoading: _savingCatalogEntry,
                   label: 'Agregar',
@@ -11077,7 +12064,8 @@ class _AdminScreenState extends State<AdminScreen> {
                     animation: animation,
                     child: child,
                     builder: (context, proxyChild) {
-                      final eased = Curves.easeOutBack.transform(animation.value);
+                      final eased =
+                          Curves.easeOutBack.transform(animation.value);
                       final scale = 1 + (0.035 * eased);
                       return Transform.scale(
                         scale: scale,
@@ -11197,6 +12185,8 @@ class _AdminScreenState extends State<AdminScreen> {
     return Column(
       children: [
         _buildCatalogManagerCard(),
+        const SizedBox(height: 12),
+        _buildTrafficMultipliersCard(),
         const SizedBox(height: 12),
         _buildGeneralCard(),
         const SizedBox(height: 12),
@@ -11343,9 +12333,7 @@ class _AdminScreenState extends State<AdminScreen> {
       }),
     ];
 
-    return rows
-        .map((row) => row.map(_csvField).join(','))
-        .join('\n');
+    return rows.map((row) => row.map(_csvField).join(',')).join('\n');
   }
 
   String _buildFilteredSummary(List<RideData> rides) {
@@ -11357,10 +12345,12 @@ class _AdminScreenState extends State<AdminScreen> {
       'in_progress'
     }, rides: rides);
     final completed = _countRidesByStatus({'completed'}, rides: rides);
-    final incidents = _countRidesByStatus({'cancelled', 'no_drivers'}, rides: rides);
+    final incidents =
+        _countRidesByStatus({'cancelled', 'no_drivers'}, rides: rides);
     final revenue = _totalRevenue(rides: rides);
     final avgTicket = _avgTicket(rides: rides);
-    final municipality = _filterMunicipality == 'all' ? 'todos' : _filterMunicipality;
+    final municipality =
+        _filterMunicipality == 'all' ? 'todos' : _filterMunicipality;
     final category = _filterCategory == 'all'
         ? 'todas'
         : (_categoryLabels[_filterCategory] ?? _filterCategory);
@@ -11613,120 +12603,451 @@ class _AdminScreenState extends State<AdminScreen> {
         child: Focus(
           autofocus: true,
           child: Scaffold(
-      backgroundColor: const Color(0xFFF4F6FB),
-      appBar: AppBar(
-        elevation: 4,
-        shadowColor: Colors.black.withValues(alpha: 0.18),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF7C2D12), Color(0xFF9A3412)],
-            ),
-          ),
-        ),
-        title: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(10),
+            backgroundColor: const Color(0xFFF4F6FB),
+            appBar: AppBar(
+              elevation: 4,
+              shadowColor: Colors.black.withValues(alpha: 0.18),
+              flexibleSpace: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF7C2D12), Color(0xFF9A3412)],
+                  ),
+                ),
               ),
-              child: const Icon(
-                Icons.admin_panel_settings,
-                color: Colors.white,
-                size: 26,
+              title: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.admin_panel_settings,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Karryt Admin',
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white)),
+                      Text('Control operativo Karryt',
+                          style:
+                              TextStyle(fontSize: 11, color: Colors.white70)),
+                    ],
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Karryt Admin',
-                    style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white)),
-                Text('Control operativo Karryt',
-                    style: TextStyle(fontSize: 11, color: Colors.white70)),
+              actions: [
+                IconButton(
+                  tooltip: 'Actualizar',
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                ),
+                IconButton(
+                  tooltip: _adminDensityCompact ? 'Cómodo' : 'Compacto',
+                  onPressed: () {
+                    setState(() {
+                      _adminDensityCompact = !_adminDensityCompact;
+                    });
+                    unawaited(
+                        _saveAdminDensityPreference(_adminDensityCompact));
+                  },
+                  icon: Icon(_adminDensityCompact
+                      ? Icons.unfold_less_outlined
+                      : Icons.unfold_more_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Comandos y atajos',
+                  onPressed: _showAdminCommandMenu,
+                  icon: const Icon(Icons.keyboard_command_key),
+                ),
               ],
             ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Actualizar',
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-          ),
-          IconButton(
-            tooltip: _adminDensityCompact ? 'Cómodo' : 'Compacto',
-            onPressed: () {
-              setState(() {
-                _adminDensityCompact = !_adminDensityCompact;
-              });
-              unawaited(_saveAdminDensityPreference(_adminDensityCompact));
-            },
-            icon: Icon(_adminDensityCompact
-                ? Icons.unfold_less_outlined
-                : Icons.unfold_more_outlined),
-          ),
-          IconButton(
-            tooltip: 'Comandos y atajos',
-            onPressed: _showAdminCommandMenu,
-            icon: const Icon(Icons.keyboard_command_key),
-          ),
-        ],
-      ),
-      body: KarrytLoadingOverlay(
-        isLoading: _saving,
-        message: 'Guardando cambios...',
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : RefreshIndicator(
-                onRefresh: _load,
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (_error != null) ...[
-                      KarrytStatusBanner(
-                        message: _error!,
-                        type: 'error',
+            body: KarrytLoadingOverlay(
+              isLoading: _saving,
+              message: 'Guardando cambios...',
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          if (_error != null) ...[
+                            KarrytStatusBanner(
+                              message: _error!,
+                              type: 'error',
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          if (_success != null) ...[
+                            KarrytStatusBanner(
+                              message: _success!,
+                              type: 'success',
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          _buildAdminModuleMenu(),
+                          const SizedBox(height: 12),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            transitionBuilder: (child, animation) =>
+                                FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0.1, 0),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            ),
+                            child: _buildModuleContent(),
+                          ),
+                          const SizedBox(height: 24),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                    ],
-                    if (_success != null) ...[
-                      KarrytStatusBanner(
-                        message: _success!,
-                        type: 'success',
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    _buildAdminModuleMenu(),
-                    const SizedBox(height: 12),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(0.1, 0),
-                            end: Offset.zero,
-                          ).animate(animation),
-                          child: child,
-                        ),
-                      ),
-                      child: _buildModuleContent(),
                     ),
-                    const SizedBox(height: 24),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrafficMultipliersCard() {
+    const rowHeaderStyle =
+        TextStyle(fontWeight: FontWeight.w700, fontSize: 13);
+    const rowSubStyle = TextStyle(fontSize: 11, color: Color(0xFF64748B));
+
+    Widget multiplierField(TextEditingController ctrl) {
+      return SizedBox(
+        width: 90,
+        child: TextField(
+          controller: ctrl,
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            suffixText: '×',
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.speed_outlined, size: 22,
+                    color: Color(0xFF1D4ED8)),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Multiplicadores de ETA',
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w800)),
+                      Text(
+                          'Factores aplicados al tiempo base de OSRM para reflejar '
+                          'condiciones reales de trafico y demanda.',
+                          style:
+                              TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // ── Tabla de tráfico ────────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  // Encabezado
+                  Container(
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(12),
+                          topRight: Radius.circular(12)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            child: Text('Condición',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1E40AF))),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 4,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            child: Text('Horario',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1E40AF))),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 120,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            child: Text('Factor',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1E40AF))),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  // Fila 1 — Hora pico
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          flex: 3,
+                          child: Padding(
+                            padding:
+                                EdgeInsets.symmetric(horizontal: 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Hora pico', style: rowHeaderStyle),
+                                Text('Tráfico máximo',
+                                    style: rowSubStyle),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Expanded(
+                          flex: 4,
+                          child: Padding(
+                            padding:
+                                EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                                'Lun–Vie  7:00–10:00\nLun–Vie  17:00–21:00',
+                                style: rowSubStyle),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: multiplierField(_etaPeakCtrl),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  // Fila 2 — Moderado
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          flex: 3,
+                          child: Padding(
+                            padding:
+                                EdgeInsets.symmetric(horizontal: 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Tráfico moderado',
+                                    style: rowHeaderStyle),
+                                Text('Flujo intermedio',
+                                    style: rowSubStyle),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Expanded(
+                          flex: 4,
+                          child: Padding(
+                            padding:
+                                EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                                'Todos  12:00–15:00\nTodos  21:00–23:00',
+                                style: rowSubStyle),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: multiplierField(_etaModerateCtrl),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  // Fila 3 — Valle
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          flex: 3,
+                          child: Padding(
+                            padding:
+                                EdgeInsets.symmetric(horizontal: 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Horas valle', style: rowHeaderStyle),
+                                Text('Tráfico ligero / noche',
+                                    style: rowSubStyle),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Expanded(
+                          flex: 4,
+                          child: Padding(
+                            padding:
+                                EdgeInsets.symmetric(horizontal: 14),
+                            child: Text('Resto del día',
+                                style: rowSubStyle),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: multiplierField(_etaBaseCtrl),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            // ── Surge de demanda ────────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(
+                    color: _etaSurgeEnabled
+                        ? const Color(0xFFF59E0B)
+                        : const Color(0xFFE2E8F0)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.trending_up,
+                            size: 18, color: Color(0xFFD97706)),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Multiplicador por alta demanda (Surge)',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14)),
+                              Text(
+                                  'Se aplica sobre el factor de tráfico cuando la demanda es alta.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF64748B))),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: _etaSurgeEnabled,
+                          activeColor: const Color(0xFFD97706),
+                          onChanged: (val) =>
+                              setState(() => _etaSurgeEnabled = val),
+                        ),
+                      ],
+                    ),
+                    if (_etaSurgeEnabled) ...[
+                      const SizedBox(height: 12),
+                      const Divider(height: 1, color: Color(0xFFFEF3C7)),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Factor surge',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13)),
+                                const SizedBox(height: 4),
+                                multiplierField(_etaSurgeMultiplierCtrl),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Umbral pendientes/choferes',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13)),
+                                const Text(
+                                    'Proporción a partir de la cual se activa el surge automáticamente en futuras versiones.',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF94A3B8))),
+                                const SizedBox(height: 4),
+                                multiplierField(_etaSurgeThresholdCtrl),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
-      ),
-          ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Ejemplo: tiempo OSRM 22 min  ×  ${_etaPeakCtrl.text.isNotEmpty ? _etaPeakCtrl.text : '2.0'} (pico) '
+              '= ${((double.tryParse(_etaPeakCtrl.text) ?? 2.0) * 22).round()} min estimado',
+              style: const TextStyle(
+                  fontSize: 12, color: Color(0xFF64748B)),
+            ),
+          ],
         ),
       ),
     );
@@ -11779,7 +13100,8 @@ class _AdminScreenState extends State<AdminScreen> {
       'in_progress'
     }, rides: rides);
     final completed = _countRidesByStatus({'completed'}, rides: rides);
-    final incidents = _countRidesByStatus({'cancelled', 'no_drivers'}, rides: rides);
+    final incidents =
+        _countRidesByStatus({'cancelled', 'no_drivers'}, rides: rides);
 
     return Card(
       elevation: 2,
@@ -11961,11 +13283,21 @@ class _DriverScreenState extends State<DriverScreen> {
   StreamSubscription<String>? _pushTokenRefreshSubscription;
 
   static const String _scheduledWindowPrefsKey = 'driver.scheduledWindowHours';
-  static const String _driverPushTokenPrefsPrefix = 'driver.pushToken.registered';
+  static const String _driverSessionIdPrefsKey = 'driver.session.id';
+  static const String _driverRecentProfilesPrefsKey =
+      'driver.session.recentProfiles';
+  static const String _driverPushTokenPrefsPrefix =
+      'driver.pushToken.registered';
   static const List<int> _windowOptions = [6, 12, 24, 48];
   static const List<int> _statementWindowOptions = [7, 15, 30, 60, 90];
   static const String _driverPushTokenFromEnv =
       String.fromEnvironment('DRIVER_PUSH_TOKEN', defaultValue: '');
+  static const String _driverIdFromEnv =
+      String.fromEnvironment('KARRYT_DRIVER_ID', defaultValue: '');
+  static const String _authBearerFromEnv =
+      String.fromEnvironment('KARRYT_AUTH_BEARER', defaultValue: '');
+  static const String _authDevSharedKeyFromEnv =
+      String.fromEnvironment('AUTH_DEV_SHARED_KEY', defaultValue: '');
   static const int _defaultScheduledWindowHours = int.fromEnvironment(
       'SCHEDULED_VISIBILITY_WINDOW_HOURS',
       defaultValue: 24);
@@ -11992,16 +13324,46 @@ class _DriverScreenState extends State<DriverScreen> {
   @override
   void initState() {
     super.initState();
-    _apiClient = ApiClient(resolveApiBaseUrl());
+    final initialDriverId = _driverIdFromEnv.trim();
+    _selectedDriverId = initialDriverId.isNotEmpty ? initialDriverId : null;
+    _apiClient = ApiClient(
+      resolveApiBaseUrl(),
+      authContext: ApiAuthContext.driver(
+        userId: (_selectedDriverId ?? '').trim(),
+        bearerToken: _authBearerFromEnv.isNotEmpty ? _authBearerFromEnv : null,
+        devAuthKey: _authDevSharedKeyFromEnv.isNotEmpty
+            ? _authDevSharedKeyFromEnv
+            : null,
+      ),
+    );
     _customWindowController =
         TextEditingController(text: '$_scheduledWindowHours');
     _initializeDriverScreen();
     unawaited(_initializePushTokenAutoRefresh());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_requestAppPermissionsForDriver());
+    });
     _autoRefresh = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted) {
         _loadRides();
       }
     });
+  }
+
+  Future<void> _requestAppPermissionsForDriver() async {
+    final result = await AppPermissions.ensureForDriver();
+    if (!mounted) {
+      return;
+    }
+
+    if (!result.allGranted) {
+      setState(() {
+        _error =
+            'Para operar como chofer habilita permisos de ubicacion, camara, microfono, telefono, almacenamiento y notificaciones.';
+      });
+    }
+
+    await AppPermissions.promptOpenSettingsIfNeeded(context, result);
   }
 
   @override
@@ -12067,8 +13429,8 @@ class _DriverScreenState extends State<DriverScreen> {
 
       final token = await FirebaseMessaging.instance.getToken(
         vapidKey: kIsWeb && _firebaseWebVapidKey.isNotEmpty
-        ? _firebaseWebVapidKey
-        : null,
+            ? _firebaseWebVapidKey
+            : null,
       );
       final normalized = token?.trim();
       if (normalized == null || normalized.isEmpty) {
@@ -12082,8 +13444,81 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   Future<void> _initializeDriverScreen() async {
+    await _restoreDriverSessionPreference();
     await _restoreScheduledWindowPreference();
     await _refreshAll();
+  }
+
+  Future<void> _restoreDriverSessionPreference() async {
+    try {
+      final envDriverId = _driverIdFromEnv.trim();
+      final prefs = await SharedPreferences.getInstance();
+      if (envDriverId.isNotEmpty) {
+        _selectedDriverId = envDriverId;
+        await prefs.setString(_driverSessionIdPrefsKey, envDriverId);
+        return;
+      }
+
+      final stored = (prefs.getString(_driverSessionIdPrefsKey) ?? '').trim();
+      if (stored.isNotEmpty) {
+        _selectedDriverId = stored;
+      }
+    } catch (_) {
+      // Ignora errores de preferencias locales.
+    }
+  }
+
+  Future<void> _saveDriverSessionPreference(String? driverId) async {
+    final normalized = (driverId ?? '').trim();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (normalized.isEmpty) {
+        await prefs.remove(_driverSessionIdPrefsKey);
+        return;
+      }
+      await prefs.setString(_driverSessionIdPrefsKey, normalized);
+    } catch (_) {
+      // Ignora errores de preferencias locales.
+    }
+  }
+
+  Future<List<String>> _loadRecentDriverProfiles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getStringList(_driverRecentProfilesPrefsKey) ??
+          const <String>[];
+      return stored
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  Future<void> _saveRecentDriverProfile(String driverId) async {
+    final normalized = driverId.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final current = prefs.getStringList(_driverRecentProfilesPrefsKey) ??
+          const <String>[];
+      final merged = <String>[normalized];
+      for (final item in current) {
+        final value = item.trim();
+        if (value.isEmpty || value == normalized || merged.contains(value)) {
+          continue;
+        }
+        merged.add(value);
+      }
+      await prefs.setStringList(
+          _driverRecentProfilesPrefsKey, merged.take(3).toList());
+    } catch (_) {
+      // Ignora errores de preferencias locales.
+    }
   }
 
   Future<void> _restoreScheduledWindowPreference() async {
@@ -12135,11 +13570,25 @@ class _DriverScreenState extends State<DriverScreen> {
     try {
       _drivers = await _apiClient.getDrivers();
       _incidentCatalog = await _apiClient.getAdminIncidentsCatalog();
-      _selectedDriverId ??= _drivers.isNotEmpty ? _drivers.first.id : null;
+      final hasCurrentDriver = _selectedDriverId != null &&
+          _drivers.any((driver) => driver.id == _selectedDriverId);
+      if (!hasCurrentDriver) {
+        _selectedDriverId = null;
+      }
+      _syncDriverAuthContext();
+      unawaited(_saveDriverSessionPreference(_selectedDriverId));
       unawaited(_registerDriverPushTokenIfAvailable());
       await _loadRides();
       await _loadRatings();
       await _loadAccountStatement();
+      if ((_selectedDriverId ?? '').isEmpty && _drivers.isNotEmpty && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || (_selectedDriverId ?? '').isNotEmpty) {
+            return;
+          }
+          unawaited(_showDriverProfileSelector(forceSelection: true));
+        });
+      }
     } catch (e) {
       _error = 'No se pudo cargar modulo chofer: $e';
     } finally {
@@ -12148,6 +13597,428 @@ class _DriverScreenState extends State<DriverScreen> {
           _loading = false;
         });
       }
+    }
+  }
+
+  void _syncDriverAuthContext() {
+    final driverId = (_selectedDriverId ?? '').trim();
+    _apiClient.setAuthContext(
+      ApiAuthContext.driver(
+        userId: driverId,
+        bearerToken: _authBearerFromEnv.isNotEmpty ? _authBearerFromEnv : null,
+        devAuthKey: _authDevSharedKeyFromEnv.isNotEmpty
+            ? _authDevSharedKeyFromEnv
+            : null,
+      ),
+    );
+  }
+
+  Future<void> _selectDriverProfile(String? driverId) async {
+    final normalizedId = (driverId ?? '').trim();
+    if (normalizedId.isEmpty || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedDriverId = normalizedId;
+      _alertedRideIds.clear();
+      _error = null;
+    });
+
+    _syncDriverAuthContext();
+    await _saveDriverSessionPreference(_selectedDriverId);
+    await _saveRecentDriverProfile(normalizedId);
+    unawaited(_registerDriverPushTokenIfAvailable());
+    await _loadRides();
+    await _loadRatings();
+    await _loadAccountStatement();
+  }
+
+  Future<void> _showDriverProfileSelector({
+    bool forceSelection = false,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+
+    if (_drivers.isEmpty) {
+      setState(() {
+        _error =
+            'No hay perfiles de chofer disponibles. Actualiza el modulo o registra uno desde Admin.';
+      });
+      return;
+    }
+
+    final recentProfileIds = await _loadRecentDriverProfiles();
+    if (!mounted) {
+      return;
+    }
+
+    final driverById = <String, DriverDetail>{
+      for (final driver in _drivers) driver.id: driver,
+    };
+    final recentDrivers = <DriverDetail>[];
+    for (final recentId in recentProfileIds) {
+      final match = driverById[recentId];
+      if (match != null) {
+        recentDrivers.add(match);
+      }
+    }
+    final prioritizedDrivers = <DriverDetail>[...recentDrivers];
+    for (final driver in _drivers) {
+      if (recentDrivers.any((item) => item.id == driver.id)) {
+        continue;
+      }
+      prioritizedDrivers.add(driver);
+    }
+
+    final selectedId = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FBFF),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Selecciona tu perfil de chofer',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    forceSelection
+                        ? 'Tu sesion se cerro. Elige un perfil para continuar.'
+                        : 'Cambia de perfil en un toque.',
+                    style: TextStyle(
+                      color: Colors.blueGrey.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (recentDrivers.isNotEmpty) ...[
+                    const Text(
+                      'Recientes',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: recentDrivers.map((driver) {
+                        final statusColor = driver.available
+                            ? const Color(0xFF059669)
+                            : const Color(0xFFB45309);
+                        final statusLabel =
+                            driver.available ? 'Disponible' : 'Fuera';
+                        final categoryIcon = switch (driver.category) {
+                          'pickup_mini' => Icons.directions_car_filled_rounded,
+                          'specialized_1t' => Icons.local_shipping_rounded,
+                          'truck_3t' => Icons.airport_shuttle_rounded,
+                          'dump_truck' => Icons.construction_rounded,
+                          _ => Icons.local_shipping_outlined,
+                        };
+                        final categoryShort = switch (driver.category) {
+                          'pickup_mini' => 'Mini',
+                          'specialized_1t' => '1T',
+                          'truck_3t' => '3T',
+                          'dump_truck' => 'Volteo',
+                          _ => driver.category.toUpperCase(),
+                        };
+
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: () => Navigator.of(context).pop(driver.id),
+                          child: Ink(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                  color: statusColor.withValues(alpha: 0.35)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Icon(
+                                    categoryIcon,
+                                    size: 13,
+                                    color: statusColor,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: statusColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  driver.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    categoryShort,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  statusLabel,
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(growable: false),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: prioritizedDrivers.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final driver = prioritizedDrivers[index];
+                        final selected = driver.id == _selectedDriverId;
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(18),
+                          onTap: () => Navigator.of(context).pop(driver.id),
+                          child: Ink(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: selected
+                                    ? const [
+                                        Color(0xFF0EA5E9),
+                                        Color(0xFF22C55E)
+                                      ]
+                                    : const [
+                                        Color(0xFFFFFFFF),
+                                        Color(0xFFF1F5F9)
+                                      ],
+                              ),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: selected
+                                    ? const Color(0xFF0284C7)
+                                    : const Color(0xFFE2E8F0),
+                                width: selected ? 2 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 46,
+                                  height: 46,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? Colors.white.withValues(alpha: 0.22)
+                                        : const Color(0xFFE2E8F0),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    Icons.local_shipping,
+                                    color: selected
+                                        ? Colors.white
+                                        : const Color(0xFF334155),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        driver.name,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                          color: selected
+                                              ? Colors.white
+                                              : const Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${driver.vehicleName} · ${driver.category}',
+                                        style: TextStyle(
+                                          color: selected
+                                              ? Colors.white
+                                                  .withValues(alpha: 0.9)
+                                              : const Color(0xFF475569),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Rating ${driver.rating} · ${driver.completedRides} viajes',
+                                        style: TextStyle(
+                                          color: selected
+                                              ? Colors.white
+                                                  .withValues(alpha: 0.9)
+                                              : const Color(0xFF64748B),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(
+                                  selected
+                                      ? Icons.check_circle_rounded
+                                      : Icons.chevron_right_rounded,
+                                  color: selected
+                                      ? Colors.white
+                                      : const Color(0xFF64748B),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                      label: Text(forceSelection ? 'Ahora no' : 'Cancelar'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedId != null && selectedId.trim().isNotEmpty) {
+      await _selectDriverProfile(selectedId);
+      return;
+    }
+
+    if (forceSelection && mounted && (_selectedDriverId ?? '').trim().isEmpty) {
+      setState(() {
+        _error =
+            'Necesitas elegir un perfil para operar como chofer en este dispositivo.';
+      });
+    }
+  }
+
+  Future<void> _logoutDriverSession() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.manage_accounts_outlined),
+              SizedBox(width: 10),
+              Expanded(child: Text('Cerrar sesion de chofer')),
+            ],
+          ),
+          content: const Text(
+            'Se cerrara la sesion local de Chofer en este dispositivo. Despues podras seleccionar otro perfil de conductor.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('Cerrar sesion'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_driverSessionIdPrefsKey);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedDriverId = null;
+        _rides = const [];
+        _ratings = const [];
+        _accountStatement = null;
+        _error =
+            'Sesion de chofer cerrada. Selecciona un conductor para continuar.';
+      });
+      _alertedRideIds.clear();
+      _syncDriverAuthContext();
+      unawaited(_showDriverProfileSelector(forceSelection: true));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sesion cerrada. Elige tu perfil para continuar.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = 'No se pudo cerrar sesion: $error';
+      });
     }
   }
 
@@ -12180,9 +14051,19 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   Future<void> _loadRides() async {
+    final driverId = _selectedDriverId;
+    if (driverId == null || driverId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _rides = const [];
+        });
+      }
+      return;
+    }
+
     try {
       final rides = await _apiClient.getDriverRides(
-        driverId: _selectedDriverId,
+        driverId: driverId,
         activeOnly: _activeOnly,
         scheduledWindowHours: _scheduledWindowHours,
       );
@@ -12359,7 +14240,8 @@ class _DriverScreenState extends State<DriverScreen> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
               child: const Text('Guardar respuesta'),
             ),
           ],
@@ -12483,7 +14365,8 @@ class _DriverScreenState extends State<DriverScreen> {
                 Navigator.of(context).pop();
                 if (mounted) {
                   ScaffoldMessenger.of(this.context).showSnackBar(
-                    const SnackBar(content: Text('CSV copiado al portapapeles.')),
+                    const SnackBar(
+                        content: Text('CSV copiado al portapapeles.')),
                   );
                 }
               },
@@ -12520,7 +14403,8 @@ class _DriverScreenState extends State<DriverScreen> {
       if (downloaded) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Descarga de estado de cuenta iniciada.')),
+            const SnackBar(
+                content: Text('Descarga de estado de cuenta iniciada.')),
           );
         }
         return;
@@ -12616,8 +14500,8 @@ class _DriverScreenState extends State<DriverScreen> {
                       initialValue: score,
                       decoration: const InputDecoration(labelText: 'Estrellas'),
                       items: [5, 4, 3, 2, 1]
-                          .map((value) =>
-                              DropdownMenuItem(value: value, child: Text('$value')))
+                          .map((value) => DropdownMenuItem(
+                              value: value, child: Text('$value')))
                           .toList(growable: false),
                       onChanged: (value) {
                         if (value == null) {
@@ -12737,15 +14621,15 @@ class _DriverScreenState extends State<DriverScreen> {
     final detailsController = TextEditingController();
     final subjectIdController = TextEditingController(text: ride.id);
     String severity = 'media';
-    String category = (_incidentCatalog['trip'] ?? const ['operacion'])
-        .first;
+    String category = (_incidentCatalog['trip'] ?? const ['operacion']).first;
 
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final categories = _incidentCatalog[subjectType] ?? const ['operacion'];
+            final categories =
+                _incidentCatalog[subjectType] ?? const ['operacion'];
             if (!categories.contains(category)) {
               category = categories.first;
             }
@@ -12757,12 +14641,16 @@ class _DriverScreenState extends State<DriverScreen> {
                   children: [
                     DropdownButtonFormField<String>(
                       initialValue: subjectType,
-                      decoration: const InputDecoration(labelText: 'Tipo de caso'),
+                      decoration:
+                          const InputDecoration(labelText: 'Tipo de caso'),
                       items: const [
                         DropdownMenuItem(value: 'trip', child: Text('Viaje')),
-                        DropdownMenuItem(value: 'vehicle', child: Text('Vehiculo')),
-                        DropdownMenuItem(value: 'customer', child: Text('Cliente')),
-                        DropdownMenuItem(value: 'driver', child: Text('Chofer')),
+                        DropdownMenuItem(
+                            value: 'vehicle', child: Text('Vehiculo')),
+                        DropdownMenuItem(
+                            value: 'customer', child: Text('Cliente')),
+                        DropdownMenuItem(
+                            value: 'driver', child: Text('Chofer')),
                       ],
                       onChanged: (value) {
                         if (value == null) {
@@ -12776,7 +14664,8 @@ class _DriverScreenState extends State<DriverScreen> {
                     const SizedBox(height: 8),
                     TextField(
                       controller: subjectIdController,
-                      decoration: const InputDecoration(labelText: 'ID afectado'),
+                      decoration:
+                          const InputDecoration(labelText: 'ID afectado'),
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
@@ -12805,7 +14694,8 @@ class _DriverScreenState extends State<DriverScreen> {
                         DropdownMenuItem(value: 'baja', child: Text('Baja')),
                         DropdownMenuItem(value: 'media', child: Text('Media')),
                         DropdownMenuItem(value: 'alta', child: Text('Alta')),
-                        DropdownMenuItem(value: 'critica', child: Text('Critica')),
+                        DropdownMenuItem(
+                            value: 'critica', child: Text('Critica')),
                       ],
                       onChanged: (value) {
                         if (value == null) {
@@ -12966,438 +14856,513 @@ class _DriverScreenState extends State<DriverScreen> {
         child: Focus(
           autofocus: true,
           child: Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
-      appBar: AppBar(
-        elevation: 4,
-        shadowColor: Colors.black.withValues(alpha: 0.18),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF0F766E), Color(0xFF059669)],
-            ),
-          ),
-        ),
-        title: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(10),
+            backgroundColor: const Color(0xFFF4F7FB),
+            appBar: AppBar(
+              elevation: 4,
+              shadowColor: Colors.black.withValues(alpha: 0.18),
+              flexibleSpace: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF0F766E), Color(0xFF059669)],
+                  ),
+                ),
               ),
-              child: const Icon(
-                Icons.local_shipping,
-                color: Colors.white,
-                size: 26,
+              title: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.local_shipping,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Karryt Chofer',
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white)),
+                      Text('Aceptacion y seguimiento',
+                          style:
+                              TextStyle(fontSize: 11, color: Colors.white70)),
+                    ],
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Karryt Chofer',
-                    style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white)),
-                Text('Aceptacion y seguimiento',
-                    style: TextStyle(fontSize: 11, color: Colors.white70)),
+              actions: [
+                IconButton(
+                  onPressed: _refreshAll,
+                  icon: const Icon(Icons.refresh),
+                ),
+                IconButton(
+                  tooltip: 'Cerrar sesion chofer',
+                  onPressed: _logoutDriverSession,
+                  icon: const Icon(Icons.logout_rounded),
+                ),
+                IconButton(
+                  tooltip: 'Cambiar perfil',
+                  onPressed: _showDriverProfileSelector,
+                  icon: const Icon(Icons.manage_accounts_rounded),
+                ),
+                IconButton(
+                  tooltip: 'Comandos y atajos',
+                  onPressed: _showDriverCommandMenu,
+                  icon: const Icon(Icons.keyboard_command_key),
+                ),
               ],
             ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            onPressed: _refreshAll,
-            icon: const Icon(Icons.refresh),
-          ),
-          IconButton(
-            tooltip: 'Comandos y atajos',
-            onPressed: _showDriverCommandMenu,
-            icon: const Icon(Icons.keyboard_command_key),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _refreshAll,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (_error != null) ...[
-                    KarrytStatusBanner(
-                      message: _error!,
-                      type: 'error',
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Perfil de chofer',
-                              style: TextStyle(
-                                  fontSize: 20, fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 10),
-                          DropdownButtonFormField<String>(
-                            initialValue: _selectedDriverId,
-                            decoration:
-                                const InputDecoration(labelText: 'Conductor'),
-                            items: _drivers
-                                .map((d) => DropdownMenuItem(
-                                      value: d.id,
-                                      child:
-                                          Text('${d.name} (${d.vehicleName})'),
-                                    ))
-                                .toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedDriverId = value;
-                                _alertedRideIds.clear();
-                              });
-                              unawaited(_registerDriverPushTokenIfAvailable());
-                              _loadRides();
-                              _loadRatings();
-                              _loadAccountStatement();
-                            },
+            body: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+                    onRefresh: _refreshAll,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        if (_error != null) ...[
+                          KarrytStatusBanner(
+                            message: _error!,
+                            type: 'error',
                           ),
                           const SizedBox(height: 8),
-                          if (selectedDriver != null) ...[
-                            Text('Categoria: ${selectedDriver.category}'),
-                            Text('Capacidad: ${selectedDriver.capacity}'),
-                            Text(
-                                'Rating: ${selectedDriver.rating} (${selectedDriver.ratingCount} calificaciones)'),
-                            Text(
-                                'Viajes completados: ${selectedDriver.completedRides}'),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: _windowOptions
-                                  .map(
-                                    (hours) => ChoiceChip(
-                                      label: Text('${hours}h'),
-                                      selected: _scheduledWindowHours == hours,
-                                      onSelected: (_) {
-                                        setState(() {
-                                          _scheduledWindowHours = hours;
-                                          _customWindowController.text =
-                                              '$hours';
-                                        });
-                                        unawaited(
-                                            _saveScheduledWindowPreference(
-                                                hours));
-                                        _loadRides();
-                                      },
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: _statementWindowOptions
-                                  .map(
-                                    (days) => ChoiceChip(
-                                      label: Text('EC ${days}d'),
-                                      selected: _statementWindowDays == days,
-                                      onSelected: (_) {
-                                        setState(() {
-                                          _statementWindowDays = days;
-                                        });
-                                        _loadAccountStatement();
-                                      },
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: PremiumTextField(
-                                    controller: _customWindowController,
-                                    label: 'Ventana programada (horas)',
-                                    keyboardType: TextInputType.number,
-                                    icon: Icons.schedule_send,
-                                    isDense: true,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                EnhancedFilledButton(
-                                  onPressed: _applyCustomWindowHours,
-                                  icon: Icons.done_all,
-                                  label: 'Aplicar',
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                EnhancedFilledButton(
-                                  onPressed: () => _toggleAvailability(true),
-                                  icon: Icons.toggle_on_outlined,
-                                  label: 'Disponible',
-                                ),
-                                EnhancedFilledButton(
-                                  onPressed: () => _toggleAvailability(false),
-                                  icon: Icons.toggle_off_outlined,
-                                  label: 'Fuera de servicio',
-                                ),
-                                FilterChip(
-                                  label: const Text('Solo activos'),
-                                  selected: _activeOnly,
-                                  onSelected: (value) {
-                                    setState(() {
-                                      _activeOnly = value;
-                                    });
-                                    _loadRides();
-                                  },
-                                ),
-                              ],
-                            ),
-                          ],
                         ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Expanded(
-                                child: Text('Estado de cuenta',
-                                    style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w700)),
-                              ),
-                              IconButton(
-                                onPressed:
-                                    _loadingAccountStatement ? null : _loadAccountStatement,
-                                icon: const Icon(Icons.refresh),
-                              ),
-                              FilledButton.tonalIcon(
-                                onPressed: _loadingAccountStatement
-                                    ? null
-                                    : _exportDriverStatementCsv,
-                                icon: const Icon(Icons.download_outlined),
-                                label: const Text('Exportar CSV'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          if (_loadingAccountStatement)
-                            const LinearProgressIndicator()
-                          else if (_accountStatement == null)
-                            const Text(
-                                'Sin datos de estado de cuenta para el chofer seleccionado.')
-                          else ...[
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
+                        Card(
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                SizedBox(
-                                  width: 220,
-                                  child: _buildDriverMetric(
-                                    icon: Icons.payments_outlined,
-                                    label: 'Ingresos brutos',
-                                    value:
-                                        'MXN ${_accountStatement!.summary.grossEarnings.toStringAsFixed(2)}',
-                                    color: const Color(0xFF15803D),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 220,
-                                  child: _buildDriverMetric(
-                                    icon: Icons.percent_outlined,
-                                    label: 'Comisiones',
-                                    value:
-                                        'MXN ${_accountStatement!.summary.commissions.toStringAsFixed(2)}',
-                                    color: const Color(0xFFB45309),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 220,
-                                  child: _buildDriverMetric(
-                                    icon: Icons.account_balance_wallet_outlined,
-                                    label: 'Neto',
-                                    value:
-                                        'MXN ${_accountStatement!.summary.netEarnings.toStringAsFixed(2)}',
-                                    color: const Color(0xFF0F766E),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 220,
-                                  child: _buildDriverMetric(
-                                    icon: Icons.savings_outlined,
-                                    label: 'Saldo disponible',
-                                    value:
-                                        'MXN ${_accountStatement!.summary.balance.toStringAsFixed(2)}',
-                                    color: const Color(0xFF1D4ED8),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              'Periodo: ${_accountStatement!.from} a ${_accountStatement!.to}',
-                              style: TextStyle(
-                                color: Colors.grey.shade700,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            if (_accountStatement!.entries.isEmpty)
-                              const Text(
-                                  'No hay movimientos en el periodo seleccionado.')
-                            else
-                              ..._accountStatement!.entries.take(20).map((entry) {
-                                final isCredit = entry.amount >= 0;
-                                return SmartListTile(
-                                  leading: Icon(
-                                    isCredit
-                                        ? Icons.arrow_downward_rounded
-                                        : Icons.arrow_upward_rounded,
-                                    color: isCredit
-                                        ? Colors.green.shade700
-                                        : Colors.red.shade700,
-                                  ),
-                                  title: Text(_ledgerTypeLabel(entry.type)),
-                                  subtitle: Text(
-                                    '${entry.description.isEmpty ? 'Sin descripcion' : entry.description} · ${entry.createdAt}',
-                                  ),
-                                  trailing: Text(
-                                    _moneySigned(entry.amount),
+                                const Text('Perfil de chofer',
                                     style: TextStyle(
-                                      color: isCredit
-                                          ? Colors.green.shade700
-                                          : Colors.red.shade700,
-                                      fontWeight: FontWeight.w700,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w800)),
+                                const SizedBox(height: 10),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: selectedDriver == null
+                                          ? const [
+                                              Color(0xFFFFFFFF),
+                                              Color(0xFFF8FAFC),
+                                            ]
+                                          : const [
+                                              Color(0xFF10B981),
+                                              Color(0xFF0EA5E9),
+                                            ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: selectedDriver == null
+                                          ? const Color(0xFFE2E8F0)
+                                          : const Color(0xFF0F766E),
                                     ),
                                   ),
-                                );
-                              }),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Calificaciones recibidas',
-                              style: TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 8),
-                          if (_loadingRatings)
-                            const LinearProgressIndicator()
-                          else if (_ratings.isEmpty)
-                            const Text('Aun no hay calificaciones para este chofer.')
-                          else
-                            ..._ratings.take(8).map((entry) {
-                              final hasReply = entry.driverResponse.trim().isNotEmpty;
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border:
-                                      Border.all(color: const Color(0xFFE2E8F0)),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${entry.score}/5 estrellas · viaje ${entry.rideId.substring(0, math.min(8, entry.rideId.length))}',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w700),
-                                    ),
-                                    if (entry.comment.trim().isNotEmpty) ...[
-                                      const SizedBox(height: 4),
-                                      Text(entry.comment),
-                                    ],
-                                    const SizedBox(height: 6),
-                                    if (hasReply)
-                                      Text(
-                                        'Tu respuesta: ${entry.driverResponse}',
-                                        style: TextStyle(
-                                          color: Colors.teal.shade700,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      )
-                                    else
-                                      Text(
-                                        'Sin respuesta del chofer',
-                                        style: TextStyle(color: Colors.orange.shade800),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.badge_rounded,
+                                        color: selectedDriver == null
+                                            ? const Color(0xFF64748B)
+                                            : Colors.white,
                                       ),
-                                    const SizedBox(height: 6),
-                                    FilledButton.tonalIcon(
-                                      onPressed: _replyingRatingId == entry.id
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          selectedDriver == null
+                                              ? 'Sin perfil activo. Selecciona tu cuenta de chofer.'
+                                              : '${selectedDriver.name} · ${selectedDriver.vehicleName}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: selectedDriver == null
+                                                ? const Color(0xFF334155)
+                                                : Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                      FilledButton.icon(
+                                        onPressed: _showDriverProfileSelector,
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor:
+                                              selectedDriver == null
+                                                  ? const Color(0xFF0EA5E9)
+                                                  : Colors.white,
+                                          foregroundColor:
+                                              selectedDriver == null
+                                                  ? Colors.white
+                                                  : const Color(0xFF0F766E),
+                                        ),
+                                        icon: const Icon(Icons.person_search),
+                                        label: Text(selectedDriver == null
+                                            ? 'Elegir'
+                                            : 'Cambiar'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                if (selectedDriver != null) ...[
+                                  Text('Categoria: ${selectedDriver.category}'),
+                                  Text('Capacidad: ${selectedDriver.capacity}'),
+                                  Text(
+                                      'Rating: ${selectedDriver.rating} (${selectedDriver.ratingCount} calificaciones)'),
+                                  Text(
+                                      'Viajes completados: ${selectedDriver.completedRides}'),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: _windowOptions
+                                        .map(
+                                          (hours) => ChoiceChip(
+                                            label: Text('${hours}h'),
+                                            selected:
+                                                _scheduledWindowHours == hours,
+                                            onSelected: (_) {
+                                              setState(() {
+                                                _scheduledWindowHours = hours;
+                                                _customWindowController.text =
+                                                    '$hours';
+                                              });
+                                              unawaited(
+                                                  _saveScheduledWindowPreference(
+                                                      hours));
+                                              _loadRides();
+                                            },
+                                          ),
+                                        )
+                                        .toList(),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: _statementWindowOptions
+                                        .map(
+                                          (days) => ChoiceChip(
+                                            label: Text('EC ${days}d'),
+                                            selected:
+                                                _statementWindowDays == days,
+                                            onSelected: (_) {
+                                              setState(() {
+                                                _statementWindowDays = days;
+                                              });
+                                              _loadAccountStatement();
+                                            },
+                                          ),
+                                        )
+                                        .toList(),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: PremiumTextField(
+                                          controller: _customWindowController,
+                                          label: 'Ventana programada (horas)',
+                                          keyboardType: TextInputType.number,
+                                          icon: Icons.schedule_send,
+                                          isDense: true,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      EnhancedFilledButton(
+                                        onPressed: _applyCustomWindowHours,
+                                        icon: Icons.done_all,
+                                        label: 'Aplicar',
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      EnhancedFilledButton(
+                                        onPressed: () =>
+                                            _toggleAvailability(true),
+                                        icon: Icons.toggle_on_outlined,
+                                        label: 'Disponible',
+                                      ),
+                                      EnhancedFilledButton(
+                                        onPressed: () =>
+                                            _toggleAvailability(false),
+                                        icon: Icons.toggle_off_outlined,
+                                        label: 'Fuera de servicio',
+                                      ),
+                                      FilterChip(
+                                        label: const Text('Solo activos'),
+                                        selected: _activeOnly,
+                                        onSelected: (value) {
+                                          setState(() {
+                                            _activeOnly = value;
+                                          });
+                                          _loadRides();
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Card(
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text('Estado de cuenta',
+                                          style: TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w700)),
+                                    ),
+                                    IconButton(
+                                      onPressed: _loadingAccountStatement
                                           ? null
-                                          : () => _replyToRating(entry),
-                                      icon: _replyingRatingId == entry.id
-                                          ? const SizedBox(
-                                              width: 14,
-                                              height: 14,
-                                              child: CircularProgressIndicator(
-                                                  strokeWidth: 2),
-                                            )
-                                          : const Icon(Icons.reply_outlined),
-                                      label: Text(hasReply
-                                          ? 'Editar respuesta'
-                                          : 'Responder'),
+                                          : _loadAccountStatement,
+                                      icon: const Icon(Icons.refresh),
+                                    ),
+                                    FilledButton.tonalIcon(
+                                      onPressed: _loadingAccountStatement
+                                          ? null
+                                          : _exportDriverStatementCsv,
+                                      icon: const Icon(Icons.download_outlined),
+                                      label: const Text('Exportar CSV'),
                                     ),
                                   ],
                                 ),
-                              );
-                            }),
-                        ],
-                      ),
+                                const SizedBox(height: 8),
+                                if (_loadingAccountStatement)
+                                  const LinearProgressIndicator()
+                                else if (_accountStatement == null)
+                                  const Text(
+                                      'Sin datos de estado de cuenta para el chofer seleccionado.')
+                                else ...[
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    children: [
+                                      SizedBox(
+                                        width: 220,
+                                        child: _buildDriverMetric(
+                                          icon: Icons.payments_outlined,
+                                          label: 'Ingresos brutos',
+                                          value:
+                                              'MXN ${_accountStatement!.summary.grossEarnings.toStringAsFixed(2)}',
+                                          color: const Color(0xFF15803D),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 220,
+                                        child: _buildDriverMetric(
+                                          icon: Icons.percent_outlined,
+                                          label: 'Comisiones',
+                                          value:
+                                              'MXN ${_accountStatement!.summary.commissions.toStringAsFixed(2)}',
+                                          color: const Color(0xFFB45309),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 220,
+                                        child: _buildDriverMetric(
+                                          icon: Icons
+                                              .account_balance_wallet_outlined,
+                                          label: 'Neto',
+                                          value:
+                                              'MXN ${_accountStatement!.summary.netEarnings.toStringAsFixed(2)}',
+                                          color: const Color(0xFF0F766E),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 220,
+                                        child: _buildDriverMetric(
+                                          icon: Icons.savings_outlined,
+                                          label: 'Saldo disponible',
+                                          value:
+                                              'MXN ${_accountStatement!.summary.balance.toStringAsFixed(2)}',
+                                          color: const Color(0xFF1D4ED8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Periodo: ${_accountStatement!.from} a ${_accountStatement!.to}',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (_accountStatement!.entries.isEmpty)
+                                    const Text(
+                                        'No hay movimientos en el periodo seleccionado.')
+                                  else
+                                    ..._accountStatement!.entries
+                                        .take(20)
+                                        .map((entry) {
+                                      final isCredit = entry.amount >= 0;
+                                      return SmartListTile(
+                                        leading: Icon(
+                                          isCredit
+                                              ? Icons.arrow_downward_rounded
+                                              : Icons.arrow_upward_rounded,
+                                          color: isCredit
+                                              ? Colors.green.shade700
+                                              : Colors.red.shade700,
+                                        ),
+                                        title:
+                                            Text(_ledgerTypeLabel(entry.type)),
+                                        subtitle: Text(
+                                          '${entry.description.isEmpty ? 'Sin descripcion' : entry.description} · ${entry.createdAt}',
+                                        ),
+                                        trailing: Text(
+                                          _moneySigned(entry.amount),
+                                          style: TextStyle(
+                                            color: isCredit
+                                                ? Colors.green.shade700
+                                                : Colors.red.shade700,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Card(
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Calificaciones recibidas',
+                                    style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700)),
+                                const SizedBox(height: 8),
+                                if (_loadingRatings)
+                                  const LinearProgressIndicator()
+                                else if (_ratings.isEmpty)
+                                  const Text(
+                                      'Aun no hay calificaciones para este chofer.')
+                                else
+                                  ..._ratings.take(8).map((entry) {
+                                    final hasReply =
+                                        entry.driverResponse.trim().isNotEmpty;
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 8),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                            color: const Color(0xFFE2E8F0)),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${entry.score}/5 estrellas · viaje ${entry.rideId.substring(0, math.min(8, entry.rideId.length))}',
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w700),
+                                          ),
+                                          if (entry.comment
+                                              .trim()
+                                              .isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(entry.comment),
+                                          ],
+                                          const SizedBox(height: 6),
+                                          if (hasReply)
+                                            Text(
+                                              'Tu respuesta: ${entry.driverResponse}',
+                                              style: TextStyle(
+                                                color: Colors.teal.shade700,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            )
+                                          else
+                                            Text(
+                                              'Sin respuesta del chofer',
+                                              style: TextStyle(
+                                                  color:
+                                                      Colors.orange.shade800),
+                                            ),
+                                          const SizedBox(height: 6),
+                                          FilledButton.tonalIcon(
+                                            onPressed: _replyingRatingId ==
+                                                    entry.id
+                                                ? null
+                                                : () => _replyToRating(entry),
+                                            icon: _replyingRatingId == entry.id
+                                                ? const SizedBox(
+                                                    width: 14,
+                                                    height: 14,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                            strokeWidth: 2),
+                                                  )
+                                                : const Icon(
+                                                    Icons.reply_outlined),
+                                            label: Text(hasReply
+                                                ? 'Editar respuesta'
+                                                : 'Responder'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ..._rides.map((ride) => _buildRideCard(ride)),
+                        if (_rides.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 16),
+                            child: KarrytEmptyState(
+                              icon: Icons.filter_alt_off_outlined,
+                              title: 'Sin viajes',
+                              subtitle:
+                                  'Ajusta los filtros para ver más resultados.',
+                            ),
+                          ),
+                        const SizedBox(height: 24),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  ..._rides.map((ride) => _buildRideCard(ride)),
-                  if (_rides.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 16),
-                      child: KarrytEmptyState(
-                        icon: Icons.filter_alt_off_outlined,
-                        title: 'Sin viajes',
-                        subtitle: 'Ajusta los filtros para ver más resultados.',
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
           ),
         ),
       ),

@@ -110,6 +110,7 @@ class RideController extends ChangeNotifier {
   String? selectedService;
 
   RideData? currentRide;
+  List<RideData> scheduledRides = [];
   double? pickupLat;
   double? pickupLng;
   double? dropoffLat;
@@ -184,6 +185,12 @@ class RideController extends ChangeNotifier {
         notifyListeners();
       },
       onRideUpdate: (ride) {
+        final idx = scheduledRides.indexWhere((r) => r.id == ride.id);
+        if (idx >= 0) {
+          scheduledRides[idx] = ride;
+          notifyListeners();
+          return;
+        }
         if (currentRide == null || currentRide!.id == ride.id) {
           currentRide = ride;
           notifyListeners();
@@ -351,12 +358,42 @@ class RideController extends ChangeNotifier {
         notifySms: notifySms,
       );
 
-      currentRide = ride;
+      if (requestType == 'scheduled') {
+        scheduledRides.add(ride);
+      } else {
+        currentRide = ride;
+      }
       _realtimeClient.watchRide(ride.id);
     } catch (e) {
       error = 'No se pudo crear viaje: $e';
     } finally {
       requestingRide = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> cancelScheduledRide(String id) async {
+    try {
+      final cancelled = await _apiClient.cancelRide(id);
+      final idx = scheduledRides.indexWhere((r) => r.id == id);
+      if (idx >= 0) {
+        scheduledRides[idx] = cancelled;
+      }
+      notifyListeners();
+    } catch (e) {
+      error = 'No se pudo cancelar el viaje programado: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteScheduledRide(String id) async {
+    try {
+      await _apiClient.deleteRide(id);
+      scheduledRides.removeWhere((r) => r.id == id);
+      error = null;
+      notifyListeners();
+    } catch (e) {
+      error = 'No se pudo eliminar el viaje programado: $e';
       notifyListeners();
     }
   }
@@ -374,6 +411,45 @@ class RideController extends ChangeNotifier {
       error = 'No se pudo cancelar viaje: $e';
       notifyListeners();
     }
+  }
+
+  Future<void> deleteCurrentRide() async {
+    if (currentRide == null) {
+      return;
+    }
+
+    try {
+      await _apiClient.deleteRide(currentRide!.id);
+      currentRide = null;
+      error = null;
+      notifyListeners();
+    } catch (e) {
+      error = 'No se pudo eliminar la solicitud: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> simulateDriverAccept() async {
+    if (currentRide == null) {
+      return;
+    }
+
+    try {
+      await _apiClient.simulateDriverAccept(rideId: currentRide!.id);
+    } catch (e) {
+      error = 'Error en modo prueba: $e';
+      notifyListeners();
+    }
+  }
+
+  bool get canDeleteRide {
+    final status = currentRide?.status;
+    return status == 'cancelled' || status == 'completed';
+  }
+
+  bool get canSimulateDriver {
+    final status = currentRide?.status;
+    return status == 'searching' || status == 'pending_driver';
   }
 
   Future<void> submitRideRating({

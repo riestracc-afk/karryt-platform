@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -31,6 +32,7 @@ class GoogleRoutesClient {
     }
 
     try {
+      final departureTime = DateTime.now().toUtc().toIso8601String();
       final body = jsonEncode({
         'origin': {
           'location': {
@@ -49,14 +51,19 @@ class GoogleRoutesClient {
           },
         },
         'travelMode': 'DRIVE',
-        'routingPreference': 'TRAFFIC_AWARE',
+        'routingPreference': 'TRAFFIC_AWARE_OPTIMAL',
         'computeAlternativeRoutes': false,
         'polylineQuality': 'HIGH_QUALITY',
+        'departureTime': departureTime,
       });
 
       final response = await http.post(
         Uri.parse('$_baseUrl?key=$apiKey'),
-        headers: {'Content-Type': 'application/json'},
+        headers: const {
+          'Content-Type': 'application/json',
+          'X-Goog-FieldMask':
+              'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration',
+        },
         body: body,
       );
 
@@ -79,16 +86,6 @@ class GoogleRoutesClient {
         return null;
       }
 
-      final legs = route['legs'];
-      if (legs is! List || legs.isEmpty) {
-        return null;
-      }
-
-      final leg = legs.first;
-      if (leg is! Map) {
-        return null;
-      }
-
       final polyline = route['polyline'];
       final encodedPolyline =
           polyline is Map ? polyline['encodedPolyline'] : null;
@@ -96,17 +93,20 @@ class GoogleRoutesClient {
           ? _decodePolyline(encodedPolyline)
           : [origin, destination];
 
-      final distance = leg['distance'];
-      final distanceMetersRaw = distance is Map
-          ? (double.tryParse(distance['meters'].toString()) ?? 0.0)
-          : 0.0;
+      final distanceMetersRaw = _readMeters(route['distanceMeters']) ??
+          _readMeters(route['distance']) ??
+          _readMetersFromLegs(route['legs']) ??
+          0.0;
 
-      final duration = leg['duration'];
-      final durationSecondsRaw = duration is Map
-          ? (double.tryParse(duration['seconds'].toString()) ?? 0.0)
-          : 0.0;
+      final durationSecondsRaw = _readSeconds(route['duration']) ??
+          _readSecondsFromLegs(route['legs']) ??
+          0.0;
 
       if (distanceMetersRaw <= 0 || durationSecondsRaw <= 0 || points.isEmpty) {
+        if (kDebugMode) {
+          // ignore: avoid_print
+          print('Google Routes response without usable route data: $response');
+        }
         return null;
       }
 
@@ -118,6 +118,56 @@ class GoogleRoutesClient {
     } catch (_) {
       return null;
     }
+  }
+
+  double? _readMeters(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is Map) {
+      final meters = value['meters'];
+      if (meters is num) {
+        return meters.toDouble();
+      }
+      return double.tryParse('$meters');
+    }
+    return double.tryParse('$value');
+  }
+
+  double? _readSeconds(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is Map) {
+      final seconds = value['seconds'];
+      if (seconds is num) {
+        return seconds.toDouble();
+      }
+      return double.tryParse('$seconds');
+    }
+    return double.tryParse('$value');
+  }
+
+  double? _readMetersFromLegs(dynamic legs) {
+    if (legs is! List || legs.isEmpty) {
+      return null;
+    }
+    final first = legs.first;
+    if (first is! Map) {
+      return null;
+    }
+    return _readMeters(first['distance']);
+  }
+
+  double? _readSecondsFromLegs(dynamic legs) {
+    if (legs is! List || legs.isEmpty) {
+      return null;
+    }
+    final first = legs.first;
+    if (first is! Map) {
+      return null;
+    }
+    return _readSeconds(first['duration']);
   }
 
   List<LatLng> _decodePolyline(String encoded) {
