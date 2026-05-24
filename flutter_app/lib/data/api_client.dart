@@ -225,7 +225,13 @@ class ApiClient {
     required String pickup,
     required String dropoff,
     required double distance,
+    bool maneuverSelected = false,
+    double? maneuverDistanceMeters,
   }) async {
+    final normalizedManeuverDistance =
+        (maneuverDistanceMeters != null && maneuverDistanceMeters.isFinite)
+            ? maneuverDistanceMeters
+            : null;
     final response = await _client.get(
       _uri('/api/quote', {
         'category': category,
@@ -233,6 +239,10 @@ class ApiClient {
         'pickup': pickup,
         'dropoff': dropoff,
         'distance': distance.toString(),
+        'maneuverSelected': maneuverSelected.toString(),
+        if (maneuverSelected && normalizedManeuverDistance != null)
+          'maneuverDistanceMeters':
+              normalizedManeuverDistance.toStringAsFixed(2),
       }),
     );
     _throwOnError(response);
@@ -255,6 +265,8 @@ class ApiClient {
     String? customerPhone,
     bool notifyWhatsApp = false,
     bool notifySms = false,
+    bool maneuverSelected = false,
+    double? maneuverDistanceMeters,
   }) async {
     final payload = {
       'pickup': pickup,
@@ -281,6 +293,9 @@ class ApiClient {
         'whatsapp': notifyWhatsApp,
         'sms': notifySms,
       },
+      'maneuverSelected': maneuverSelected,
+      if (maneuverSelected && maneuverDistanceMeters != null)
+        'maneuverDistanceMeters': maneuverDistanceMeters,
       'pickupPoint': {
         'lat': pickupLat ?? 40.4168,
         'lng': pickupLng ?? -3.7038,
@@ -798,6 +813,42 @@ class ApiClient {
     return data
         .map((e) => DriverDetail.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<DriverDetail> linkDriverProfile({
+    required String phone,
+    required String licenseNumber,
+    required String pin,
+  }) async {
+    final response = await _client.post(
+      _uri('/api/driver/profile-auth/link'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'phone': phone,
+        'licenseNumber': licenseNumber,
+        'pin': pin,
+      }),
+    );
+    _throwOnError(response);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return DriverDetail.fromJson(data['driver'] as Map<String, dynamic>);
+  }
+
+  Future<DriverDetail> unlockDriverProfile({
+    required String driverId,
+    required String pin,
+  }) async {
+    final response = await _client.post(
+      _uri('/api/driver/profile-auth/unlock'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'driverId': driverId,
+        'pin': pin,
+      }),
+    );
+    _throwOnError(response);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return DriverDetail.fromJson(data['driver'] as Map<String, dynamic>);
   }
 
   Future<void> registerDriverDeviceToken({

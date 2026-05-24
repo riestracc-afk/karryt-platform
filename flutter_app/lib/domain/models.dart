@@ -58,15 +58,21 @@ class PricingRow {
 }
 
 class QuoteResult {
-  QuoteResult({required this.fareEstimate});
+  QuoteResult({
+    required this.fareEstimate,
+    required this.maneuverSurchargePerTrip,
+  });
 
   final double fareEstimate;
+  final double maneuverSurchargePerTrip;
 
   String get currencyFormatted => 'MXN ${fareEstimate.toStringAsFixed(2)}';
 
   factory QuoteResult.fromJson(Map<String, dynamic> json) {
     return QuoteResult(
       fareEstimate: (json['fareEstimate'] as num?)?.toDouble() ?? 0,
+      maneuverSurchargePerTrip:
+          (json['maneuverSurchargePerTrip'] as num?)?.toDouble() ?? 0,
     );
   }
 }
@@ -382,18 +388,23 @@ class AdminCategoryConfig {
     required this.startFare,
     required this.extraKmRate,
     required this.operationalPerMinRate,
+    required this.operatingProfile,
   });
 
   final double startFare;
   final double extraKmRate;
   final double operationalPerMinRate;
+  final AdminCategoryOperatingProfile operatingProfile;
 
   factory AdminCategoryConfig.fromJson(Map<String, dynamic> json) {
+    final profileRaw =
+        json['operatingProfile'] as Map<String, dynamic>? ?? const {};
     return AdminCategoryConfig(
       startFare: (json['startFare'] as num?)?.toDouble() ?? 0,
       extraKmRate: (json['extraKmRate'] as num?)?.toDouble() ?? 0,
       operationalPerMinRate:
           (json['operationalPerMinRate'] as num?)?.toDouble() ?? 0,
+      operatingProfile: AdminCategoryOperatingProfile.fromJson(profileRaw),
     );
   }
 
@@ -402,6 +413,49 @@ class AdminCategoryConfig {
       'startFare': startFare,
       'extraKmRate': extraKmRate,
       'operationalPerMinRate': operationalPerMinRate,
+      'operatingProfile': operatingProfile.toJson(),
+    };
+  }
+}
+
+class AdminCategoryOperatingProfile {
+  AdminCategoryOperatingProfile({
+    required this.fuelEfficiencyKmPerLiter,
+    required this.avgSpeedKmhNoTraffic,
+    required this.maintenancePerKm,
+    required this.depreciationPerKm,
+    required this.insurancePerKm,
+    required this.permitsPerKm,
+  });
+
+  final double fuelEfficiencyKmPerLiter;
+  final double avgSpeedKmhNoTraffic;
+  final double maintenancePerKm;
+  final double depreciationPerKm;
+  final double insurancePerKm;
+  final double permitsPerKm;
+
+  factory AdminCategoryOperatingProfile.fromJson(Map<String, dynamic> json) {
+    return AdminCategoryOperatingProfile(
+      fuelEfficiencyKmPerLiter:
+          (json['fuelEfficiencyKmPerLiter'] as num?)?.toDouble() ?? 9,
+      avgSpeedKmhNoTraffic:
+          (json['avgSpeedKmhNoTraffic'] as num?)?.toDouble() ?? 28,
+      maintenancePerKm: (json['maintenancePerKm'] as num?)?.toDouble() ?? 1,
+      depreciationPerKm: (json['depreciationPerKm'] as num?)?.toDouble() ?? 1,
+      insurancePerKm: (json['insurancePerKm'] as num?)?.toDouble() ?? 0.7,
+      permitsPerKm: (json['permitsPerKm'] as num?)?.toDouble() ?? 0.6,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'fuelEfficiencyKmPerLiter': fuelEfficiencyKmPerLiter,
+      'avgSpeedKmhNoTraffic': avgSpeedKmhNoTraffic,
+      'maintenancePerKm': maintenancePerKm,
+      'depreciationPerKm': depreciationPerKm,
+      'insurancePerKm': insurancePerKm,
+      'permitsPerKm': permitsPerKm,
     };
   }
 }
@@ -416,6 +470,15 @@ class AdminPricingConfig {
     required this.defaultUnloadingMinutes,
     required this.loadPersonnelUnitCost,
     required this.unloadPersonnelUnitCost,
+    required this.driverNetDailyTarget,
+    required this.driverWorkHoursPerDay,
+    required this.fuelPricePerLiter,
+    required this.appCommissionRatePct,
+    required this.vatRatePct,
+    required this.fiscalReserveRatePct,
+    required this.maneuverPlatformMarginRate,
+    required this.marketplaceVisibleCategories,
+    required this.driverToPickupDistanceRatio,
     required this.categories,
     required this.municipalities,
   });
@@ -428,6 +491,15 @@ class AdminPricingConfig {
   final double defaultUnloadingMinutes;
   final double loadPersonnelUnitCost;
   final double unloadPersonnelUnitCost;
+  final double driverNetDailyTarget;
+  final double driverWorkHoursPerDay;
+  final double fuelPricePerLiter;
+  final double appCommissionRatePct;
+  final double vatRatePct;
+  final double fiscalReserveRatePct;
+  final double maneuverPlatformMarginRate;
+  final List<String> marketplaceVisibleCategories;
+  final double driverToPickupDistanceRatio;
   final Map<String, AdminCategoryConfig> categories;
   final List<String> municipalities;
 
@@ -436,6 +508,9 @@ class AdminPricingConfig {
         json['categories'] as Map<String, dynamic>? ?? const {};
     final municipalitiesRaw =
         json['municipalities'] as List<dynamic>? ?? const [];
+    final visibleCategoriesRaw =
+      json['marketplaceVisibleCategories'] as List<dynamic>? ??
+        const ['specialized_1t'];
 
     return AdminPricingConfig(
       foraneoThresholdKm: (json['foraneoThresholdKm'] as num?)?.toDouble() ?? 0,
@@ -452,6 +527,25 @@ class AdminPricingConfig {
           (json['loadPersonnelUnitCost'] as num?)?.toDouble() ?? 0,
       unloadPersonnelUnitCost:
           (json['unloadPersonnelUnitCost'] as num?)?.toDouble() ?? 0,
+        driverNetDailyTarget:
+          (json['driverNetDailyTarget'] as num?)?.toDouble() ?? 1200,
+        driverWorkHoursPerDay:
+          (json['driverWorkHoursPerDay'] as num?)?.toDouble() ?? 8,
+        fuelPricePerLiter:
+          (json['fuelPricePerLiter'] as num?)?.toDouble() ?? 28.22,
+        appCommissionRatePct:
+          (json['appCommissionRatePct'] as num?)?.toDouble() ?? 25,
+        vatRatePct: (json['vatRatePct'] as num?)?.toDouble() ?? 16,
+        fiscalReserveRatePct:
+          (json['fiscalReserveRatePct'] as num?)?.toDouble() ?? 3,
+        maneuverPlatformMarginRate:
+          (json['maneuverPlatformMarginRate'] as num?)?.toDouble() ?? 0.2,
+        marketplaceVisibleCategories: visibleCategoriesRaw
+            .map((e) => '$e')
+            .where((e) => e.trim().isNotEmpty)
+            .toList(),
+        driverToPickupDistanceRatio:
+          (json['driverToPickupDistanceRatio'] as num?)?.toDouble() ?? 0.35,
       categories: categoriesRaw.map(
         (key, value) => MapEntry(
           key,
@@ -475,6 +569,15 @@ class AdminPricingConfig {
       'defaultUnloadingMinutes': defaultUnloadingMinutes,
       'loadPersonnelUnitCost': loadPersonnelUnitCost,
       'unloadPersonnelUnitCost': unloadPersonnelUnitCost,
+        'driverNetDailyTarget': driverNetDailyTarget,
+        'driverWorkHoursPerDay': driverWorkHoursPerDay,
+        'fuelPricePerLiter': fuelPricePerLiter,
+        'appCommissionRatePct': appCommissionRatePct,
+        'vatRatePct': vatRatePct,
+        'fiscalReserveRatePct': fiscalReserveRatePct,
+        'maneuverPlatformMarginRate': maneuverPlatformMarginRate,
+        'marketplaceVisibleCategories': marketplaceVisibleCategories,
+        'driverToPickupDistanceRatio': driverToPickupDistanceRatio,
       'categories':
           categories.map((key, value) => MapEntry(key, value.toJson())),
       'municipalities': municipalities,
@@ -504,6 +607,8 @@ class AdminVehicle {
     required this.verificationExpiry,
     required this.notes,
     required this.accessories,
+    required this.documentPhotos,
+    required this.allowMissingDocuments,
     required this.suspended,
     required this.suspensionReason,
     required this.active,
@@ -531,6 +636,8 @@ class AdminVehicle {
   final String? verificationExpiry;
   final String notes;
   final List<String> accessories;
+  final Map<String, String> documentPhotos;
+  final bool allowMissingDocuments;
   final bool suspended;
   final String suspensionReason;
   final bool active;
@@ -539,6 +646,8 @@ class AdminVehicle {
 
   factory AdminVehicle.fromJson(Map<String, dynamic> json) {
     final accessories = json['accessories'] as List<dynamic>? ?? const [];
+    final rawDocumentPhotos = json['documentPhotos'] as Map<String, dynamic>? ??
+        const <String, dynamic>{};
     return AdminVehicle(
       id: json['id'] as String? ?? '',
       plateNumber: json['plateNumber'] as String? ?? '',
@@ -563,6 +672,10 @@ class AdminVehicle {
           .map((entry) => entry.toString())
           .where((entry) => entry.trim().isNotEmpty)
           .toList(growable: false),
+      documentPhotos: rawDocumentPhotos.map(
+        (key, value) => MapEntry(key, value?.toString().trim() ?? ''),
+      ),
+      allowMissingDocuments: json['allowMissingDocuments'] as bool? ?? false,
         suspended: json['suspended'] as bool? ?? false,
         suspensionReason: json['suspensionReason'] as String? ?? '',
       active: json['active'] as bool? ?? true,
@@ -593,6 +706,8 @@ class AdminVehicle {
       'verificationExpiry': verificationExpiry,
       'notes': notes,
       'accessories': accessories,
+      'documentPhotos': documentPhotos,
+      'allowMissingDocuments': allowMissingDocuments,
       'suspended': suspended,
       'suspensionReason': suspensionReason,
       'active': active,
@@ -629,10 +744,14 @@ class AdminDriver {
     required this.assignedVehicleIds,
     required this.cargoSkills,
     required this.documents,
+    required this.documentPhotos,
+    required this.allowMissingDocuments,
     required this.rating,
     required this.ratingCount,
     required this.createdAt,
     required this.updatedAt,
+    this.driverPin,
+    this.pinConfigured = false,
   });
 
   final String id;
@@ -660,10 +779,14 @@ class AdminDriver {
   final List<String> assignedVehicleIds;
   final List<String> cargoSkills;
   final Map<String, bool> documents;
+  final Map<String, String> documentPhotos;
+  final bool allowMissingDocuments;
   final String rating;
   final int ratingCount;
   final String createdAt;
   final String updatedAt;
+  final String? driverPin;
+  final bool pinConfigured;
 
   String get fullName => '$firstName $lastName'.trim();
 
@@ -672,6 +795,8 @@ class AdminDriver {
     final cargoSkills = json['cargoSkills'] as List<dynamic>? ?? const [];
     final rawDocuments =
         json['documents'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    final rawDocumentPhotos = json['documentPhotos'] as Map<String, dynamic>? ??
+      const <String, dynamic>{};
     return AdminDriver(
       id: json['id'] as String? ?? '',
       firstName: json['firstName'] as String? ?? '',
@@ -706,10 +831,16 @@ class AdminDriver {
       documents: rawDocuments.map(
         (key, value) => MapEntry(key, value == true),
       ),
+      documentPhotos: rawDocumentPhotos.map(
+        (key, value) => MapEntry(key, value?.toString().trim() ?? ''),
+      ),
+      allowMissingDocuments: json['allowMissingDocuments'] as bool? ?? false,
       rating: json['rating'] as String? ?? '0.00',
       ratingCount: (json['ratingCount'] as num?)?.toInt() ?? 0,
       createdAt: json['createdAt'] as String? ?? '',
       updatedAt: json['updatedAt'] as String? ?? '',
+      driverPin: null,
+      pinConfigured: json['pinConfigured'] as bool? ?? false,
     );
   }
 
@@ -740,10 +871,13 @@ class AdminDriver {
       'assignedVehicleIds': assignedVehicleIds,
       'cargoSkills': cargoSkills,
       'documents': documents,
+      'documentPhotos': documentPhotos,
+      'allowMissingDocuments': allowMissingDocuments,
       'rating': rating,
       'ratingCount': ratingCount,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
+      if ((driverPin ?? '').trim().isNotEmpty) 'driverPin': driverPin!.trim(),
     };
   }
 }

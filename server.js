@@ -2,6 +2,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const dotenv = require("dotenv");
 const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
@@ -30,6 +31,11 @@ const DEFAULT_SCHEDULED_VISIBILITY_WINDOW_HOURS = Number.isFinite(Number(process
 const DEFAULT_DRIVER_COMMISSION_RATE = Number.isFinite(Number(process.env.DRIVER_COMMISSION_RATE))
   ? Math.max(0, Math.min(0.95, Number(process.env.DRIVER_COMMISSION_RATE)))
   : 0.18;
+const DEFAULT_MANEUVER_LOADER_PAY_PER_TRIP = 250;
+const DEFAULT_MANEUVER_PLATFORM_MARGIN_RATE = Number.isFinite(Number(process.env.MANEUVER_PLATFORM_MARGIN_RATE))
+  ? Math.max(0, Number(process.env.MANEUVER_PLATFORM_MARGIN_RATE))
+  : 0.2;
+const DEFAULT_MANEUVER_MAX_DISTANCE_METERS = 4;
 const DRIVER_OFFER_PENDING_DELAY_MS = Number.isFinite(Number(process.env.DRIVER_OFFER_PENDING_DELAY_MS))
   ? Math.max(15000, Number(process.env.DRIVER_OFFER_PENDING_DELAY_MS))
   : 45000;
@@ -61,6 +67,27 @@ const GOOGLE_ADDRESS_VALIDATION_API_KEY = process.env.GOOGLE_ADDRESS_VALIDATION_
 const NOMINATIM_USER_AGENT =
   process.env.NOMINATIM_USER_AGENT ||
   "Karryt Platform/1.0 (contact: soporte@karryt.local)";
+const DRIVER_PIN_PEPPER = String(process.env.DRIVER_PIN_PEPPER || "karryt-driver-pin-v1");
+
+function normalizePhoneDigits(value) {
+  return String(value || "").replace(/\D/g, "").trim();
+}
+
+function normalizeLicenseNumber(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function isValidDriverPin(value) {
+  return /^\d{4}$/.test(String(value || "").trim());
+}
+
+function hashDriverPin(pin) {
+  const normalized = String(pin || "").trim();
+  return crypto
+    .createHash("sha256")
+    .update(`${DRIVER_PIN_PEPPER}:${normalized}`)
+    .digest("hex");
+}
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -985,11 +1012,68 @@ const defaultAdminPricingConfig = {
   defaultUnloadingMinutes: 30,
   loadPersonnelUnitCost: 80,
   unloadPersonnelUnitCost: 80,
+  driverNetDailyTarget: 1200,
+  driverWorkHoursPerDay: 8,
+  fuelPricePerLiter: 28.22,
+  appCommissionRatePct: 25,
+  vatRatePct: 16,
+  fiscalReserveRatePct: 3,
+  maneuverPlatformMarginRate: DEFAULT_MANEUVER_PLATFORM_MARGIN_RATE,
+  marketplaceVisibleCategories: ["specialized_1t"],
+  driverToPickupDistanceRatio: 0.35,
   categories: {
-    pickup_mini: { startFare: 150, extraKmRate: 18, operationalPerMinRate: 4 },
-    specialized_1t: { startFare: 300, extraKmRate: 30, operationalPerMinRate: 6 },
-    truck_3t: { startFare: 700, extraKmRate: 45, operationalPerMinRate: 8 },
-    dump_truck: { startFare: 1500, extraKmRate: 75, operationalPerMinRate: 12 }
+    pickup_mini: {
+      startFare: 150,
+      extraKmRate: 18,
+      operationalPerMinRate: 4,
+      operatingProfile: {
+        fuelEfficiencyKmPerLiter: 9,
+        avgSpeedKmhNoTraffic: 30,
+        maintenancePerKm: 1.2,
+        depreciationPerKm: 1.5,
+        insurancePerKm: 0.8,
+        permitsPerKm: 0.5
+      }
+    },
+    specialized_1t: {
+      startFare: 300,
+      extraKmRate: 30,
+      operationalPerMinRate: 6,
+      operatingProfile: {
+        fuelEfficiencyKmPerLiter: 8,
+        avgSpeedKmhNoTraffic: 28,
+        maintenancePerKm: 1.6,
+        depreciationPerKm: 2.1,
+        insurancePerKm: 1.1,
+        permitsPerKm: 0.8
+      }
+    },
+    truck_3t: {
+      startFare: 700,
+      extraKmRate: 45,
+      operationalPerMinRate: 8,
+      operatingProfile: {
+        fuelEfficiencyKmPerLiter: 5,
+        avgSpeedKmhNoTraffic: 24,
+        maintenancePerKm: 2.4,
+        depreciationPerKm: 3.6,
+        insurancePerKm: 1.8,
+        permitsPerKm: 1.4
+      }
+    },
+    dump_truck: {
+      startFare: 1500,
+      extraKmRate: 75,
+      operationalPerMinRate: 12,
+      operatingProfile: {
+        fuelEfficiencyKmPerLiter: 4,
+        avgSpeedKmhNoTraffic: 20,
+        maintenancePerKm: 3,
+        depreciationPerKm: 4.5,
+        insurancePerKm: 2.2,
+        permitsPerKm: 1.8
+      }
+    }
   }
 };
 
@@ -1037,6 +1121,24 @@ function normalizeAdminPricingConfig(input) {
   base.defaultUnloadingMinutes = Math.max(0, toNumberOr(data.defaultUnloadingMinutes, base.defaultUnloadingMinutes));
   base.loadPersonnelUnitCost = Math.max(0, toNumberOr(data.loadPersonnelUnitCost, base.loadPersonnelUnitCost));
   base.unloadPersonnelUnitCost = Math.max(0, toNumberOr(data.unloadPersonnelUnitCost, base.unloadPersonnelUnitCost));
+  base.driverNetDailyTarget = Math.max(0, toNumberOr(data.driverNetDailyTarget, base.driverNetDailyTarget));
+  base.driverWorkHoursPerDay = Math.max(1, toNumberOr(data.driverWorkHoursPerDay, base.driverWorkHoursPerDay));
+  base.fuelPricePerLiter = Math.max(0, toNumberOr(data.fuelPricePerLiter, base.fuelPricePerLiter));
+  base.appCommissionRatePct = Math.max(0, toNumberOr(data.appCommissionRatePct, base.appCommissionRatePct));
+  base.vatRatePct = Math.max(0, toNumberOr(data.vatRatePct, base.vatRatePct));
+  base.fiscalReserveRatePct = Math.max(0, toNumberOr(data.fiscalReserveRatePct, base.fiscalReserveRatePct));
+  base.maneuverPlatformMarginRate = Math.max(0, toNumberOr(data.maneuverPlatformMarginRate, base.maneuverPlatformMarginRate));
+  base.marketplaceVisibleCategories = Array.isArray(data.marketplaceVisibleCategories)
+    ? [...new Set(
+      data.marketplaceVisibleCategories
+        .map((value) => String(value || "").trim())
+        .filter((value) => Boolean(vehicleCategories[value]))
+    )]
+    : [...base.marketplaceVisibleCategories];
+  if (base.marketplaceVisibleCategories.length === 0) {
+    base.marketplaceVisibleCategories = ["specialized_1t"];
+  }
+  base.driverToPickupDistanceRatio = Math.max(0, toNumberOr(data.driverToPickupDistanceRatio, base.driverToPickupDistanceRatio));
 
   const srcCategories = data.categories && typeof data.categories === "object" ? data.categories : {};
   Object.keys(base.categories).forEach((key) => {
@@ -1044,6 +1146,51 @@ function normalizeAdminPricingConfig(input) {
     base.categories[key].startFare = Math.max(0, toNumberOr(src.startFare, base.categories[key].startFare));
     base.categories[key].extraKmRate = Math.max(0, toNumberOr(src.extraKmRate, base.categories[key].extraKmRate));
     base.categories[key].operationalPerMinRate = Math.max(0, toNumberOr(src.operationalPerMinRate, base.categories[key].operationalPerMinRate));
+    const srcProfile = src.operatingProfile && typeof src.operatingProfile === "object"
+      ? src.operatingProfile
+      : {};
+    base.categories[key].operatingProfile.fuelEfficiencyKmPerLiter = Math.max(
+      1,
+      toNumberOr(
+        srcProfile.fuelEfficiencyKmPerLiter,
+        base.categories[key].operatingProfile.fuelEfficiencyKmPerLiter
+      )
+    );
+    base.categories[key].operatingProfile.avgSpeedKmhNoTraffic = Math.max(
+      5,
+      toNumberOr(
+        srcProfile.avgSpeedKmhNoTraffic,
+        base.categories[key].operatingProfile.avgSpeedKmhNoTraffic
+      )
+    );
+    base.categories[key].operatingProfile.maintenancePerKm = Math.max(
+      0,
+      toNumberOr(
+        srcProfile.maintenancePerKm,
+        base.categories[key].operatingProfile.maintenancePerKm
+      )
+    );
+    base.categories[key].operatingProfile.depreciationPerKm = Math.max(
+      0,
+      toNumberOr(
+        srcProfile.depreciationPerKm,
+        base.categories[key].operatingProfile.depreciationPerKm
+      )
+    );
+    base.categories[key].operatingProfile.insurancePerKm = Math.max(
+      0,
+      toNumberOr(
+        srcProfile.insurancePerKm,
+        base.categories[key].operatingProfile.insurancePerKm
+      )
+    );
+    base.categories[key].operatingProfile.permitsPerKm = Math.max(
+      0,
+      toNumberOr(
+        srcProfile.permitsPerKm,
+        base.categories[key].operatingProfile.permitsPerKm
+      )
+    );
   });
 
   return base;
@@ -1126,6 +1273,21 @@ function normalizeAdminVehicleRecord(item, { existingId = null } = {}) {
       .filter((entry) => entry && adminVehicleAccessoriesCatalog.includes(entry))
     : [];
 
+  const vehicleDocumentKeys = [
+    "tarjeta_circulacion",
+    "poliza_seguro",
+    "comprobante_domicilio",
+    "verificacion"
+  ];
+  const documentPhotosSource =
+    item.documentPhotos && typeof item.documentPhotos === "object"
+      ? item.documentPhotos
+      : {};
+  const documentPhotos = vehicleDocumentKeys.reduce((acc, key) => {
+    acc[key] = String(documentPhotosSource[key] || "").trim();
+    return acc;
+  }, {});
+
   const nowIso = new Date().toISOString();
 
   return {
@@ -1149,12 +1311,41 @@ function normalizeAdminVehicleRecord(item, { existingId = null } = {}) {
     verificationExpiry: normalizeDateLike(item.verificationExpiry),
     notes: String(item.notes || "").trim(),
     accessories: [...new Set(accessories)],
+    documentPhotos,
+    allowMissingDocuments: item.allowMissingDocuments === true,
     suspended: item.suspended === true,
     suspensionReason: String(item.suspensionReason || "").trim().slice(0, 500),
     active: item.active !== false,
     createdAt: String(item.createdAt || "").trim() || nowIso,
     updatedAt: nowIso
   };
+}
+
+function validateVehicleDocumentCompliance(vehicle) {
+  if (!vehicle || typeof vehicle !== "object") {
+    return "Datos de vehiculo invalidos";
+  }
+  if (vehicle.allowMissingDocuments === true) {
+    return null;
+  }
+
+  const requiredVehicleDocumentKeys = [
+    "tarjeta_circulacion",
+    "poliza_seguro",
+    "comprobante_domicilio",
+    "verificacion"
+  ];
+  const photos =
+    vehicle.documentPhotos && typeof vehicle.documentPhotos === "object"
+      ? vehicle.documentPhotos
+      : {};
+  const missing = requiredVehicleDocumentKeys.filter(
+    (key) => !String(photos[key] || "").trim()
+  );
+  if (!missing.length) {
+    return null;
+  }
+  return `Faltan fotos de documentos del vehiculo: ${missing.join(", ")}`;
 }
 
 function loadAdminVehicles() {
@@ -1320,11 +1511,16 @@ function normalizeAdminDriverRecord(item, { existingId = null } = {}) {
   }
 
   const requiredString = (value) => String(value || "").trim();
+  const existingPinHash = requiredString(item.driverPinHash);
   const firstName = requiredString(item.firstName);
   const lastName = requiredString(item.lastName);
-  const phone = requiredString(item.phone);
+  const phone = normalizePhoneDigits(item.phone);
   const category = requiredString(item.category);
-  const licenseNumber = requiredString(item.licenseNumber).toUpperCase();
+  const licenseNumber = normalizeLicenseNumber(item.licenseNumber);
+  const submittedPin = requiredString(item.driverPin || item.pin);
+  const driverPinHash = isValidDriverPin(submittedPin)
+    ? hashDriverPin(submittedPin)
+    : existingPinHash;
 
   if (!firstName || !lastName || !phone || !category || !licenseNumber || !vehicleCategories[category]) {
     return null;
@@ -1350,6 +1546,15 @@ function normalizeAdminDriverRecord(item, { existingId = null } = {}) {
   const documentsSource = item.documents && typeof item.documents === "object" ? item.documents : {};
   const documents = adminDriverDocumentKeys.reduce((acc, key) => {
     acc[key] = documentsSource[key] === true;
+    return acc;
+  }, {});
+
+  const documentPhotosSource =
+    item.documentPhotos && typeof item.documentPhotos === "object"
+      ? item.documentPhotos
+      : {};
+  const documentPhotos = adminDriverDocumentKeys.reduce((acc, key) => {
+    acc[key] = String(documentPhotosSource[key] || "").trim();
     return acc;
   }, {});
 
@@ -1394,9 +1599,44 @@ function normalizeAdminDriverRecord(item, { existingId = null } = {}) {
     assignedVehicleIds,
     cargoSkills,
     documents,
+    documentPhotos,
+    allowMissingDocuments: item.allowMissingDocuments === true,
+    driverPinHash,
     createdAt: requiredString(item.createdAt) || nowIso,
     updatedAt: nowIso
   };
+}
+
+function validateDriverDocumentCompliance(driver) {
+  if (!driver || typeof driver !== "object") {
+    return "Datos de chofer invalidos";
+  }
+  if (driver.allowMissingDocuments === true) {
+    return null;
+  }
+
+  const documents = driver.documents && typeof driver.documents === "object" ? driver.documents : {};
+  const photos =
+    driver.documentPhotos && typeof driver.documentPhotos === "object"
+      ? driver.documentPhotos
+      : {};
+
+  const missingDocs = adminDriverDocumentKeys.filter((key) => documents[key] !== true);
+  const missingPhotos = adminDriverDocumentKeys.filter(
+    (key) => !String(photos[key] || "").trim()
+  );
+  if (!missingDocs.length && !missingPhotos.length) {
+    return null;
+  }
+
+  const messages = [];
+  if (missingDocs.length) {
+    messages.push(`faltan marcar documentos: ${missingDocs.join(", ")}`);
+  }
+  if (missingPhotos.length) {
+    messages.push(`faltan fotos de documentos: ${missingPhotos.join(", ")}`);
+  }
+  return messages.join("; ");
 }
 
 function loadAdminDrivers() {
@@ -1748,8 +1988,13 @@ function adminDriverWithRating(driver) {
   };
   applyDriverRatingSummary(summarySource);
 
+  const payload = { ...driver };
+  const pinConfigured = Boolean(String(payload.driverPinHash || "").trim());
+  delete payload.driverPinHash;
+
   return {
-    ...driver,
+    ...payload,
+    pinConfigured,
     rating: summarySource.rating,
     ratingCount: summarySource.ratingCount || 0
   };
@@ -2386,7 +2631,7 @@ const vehicleCategories = {
   },
   specialized_1t: {
     id: "specialized_1t",
-    label: "Especializada 1 tonelada",
+    label: "Pickup Caja Redilas",
     capacity: "Hasta 1.1 tonelada",
     description: "Camionetas especializadas para carga estructurada",
     boxSize: "2.60 x 1.80 x 0.40 m",
@@ -2542,6 +2787,63 @@ const drivers = Array.from({ length: 18 }, (_, i) => {
     available: true,
     completedRides: Math.floor(Math.random() * 500) + 50
   };
+});
+
+function toRuntimeDriverFromAdmin(adminDriver, existingRuntime = null) {
+  const category = String(adminDriver.category || "").trim();
+  const categoryData = vehicleCategories[category] || vehicleCategories.pickup_mini;
+  const fallbackVehicleName =
+    categoryData?.vehicles?.[0]?.name ||
+    "Vehiculo";
+
+  return {
+    id: String(adminDriver.id || "").trim(),
+    name: `${String(adminDriver.firstName || "").trim()} ${String(adminDriver.lastName || "").trim()}`.trim() || "Chofer",
+    rating: String(adminDriver.rating || existingRuntime?.rating || "0.00"),
+    ratingCount: Number(adminDriver.ratingCount || existingRuntime?.ratingCount || 0),
+    category,
+    vehicle: {
+      id: String(adminDriver.assignedVehicleIds?.[0] || existingRuntime?.vehicle?.id || ""),
+      name: existingRuntime?.vehicle?.name || fallbackVehicleName
+    },
+    capacity: categoryData?.capacity || existingRuntime?.capacity || "",
+    lat: Number(existingRuntime?.lat || cityCenter.lat + (Math.random() - 0.5) * 0.06),
+    lng: Number(existingRuntime?.lng || cityCenter.lng + (Math.random() - 0.5) * 0.06),
+    available: adminDriver.available === true,
+    completedRides: Number(existingRuntime?.completedRides || 0)
+  };
+}
+
+function upsertRuntimeDriverFromAdmin(adminDriver) {
+  const id = String(adminDriver?.id || "").trim();
+  if (!id) {
+    return null;
+  }
+
+  const existingIndex = drivers.findIndex((item) => item.id === id);
+  const existingRuntime = existingIndex >= 0 ? drivers[existingIndex] : null;
+  const runtimeDriver = toRuntimeDriverFromAdmin(adminDriver, existingRuntime);
+
+  if (existingIndex >= 0) {
+    drivers[existingIndex] = runtimeDriver;
+  } else {
+    drivers.unshift(runtimeDriver);
+  }
+
+  applyDriverRatingSummary(runtimeDriver);
+  return runtimeDriver;
+}
+
+function removeRuntimeDriverById(driverId) {
+  const id = String(driverId || "").trim();
+  const index = drivers.findIndex((item) => item.id === id);
+  if (index >= 0) {
+    drivers.splice(index, 1);
+  }
+}
+
+adminDrivers.forEach((record) => {
+  upsertRuntimeDriverFromAdmin(record);
 });
 
 const rides = new Map();
@@ -2850,27 +3152,189 @@ async function notifyOfflineDrivers(ride, preferences = {}) {
   }
 }
 
-function estimateFare(distance, categoryKey, serviceKey, waitMinutes = 0, routeType = "local", personnelSurcharge = 0) {
+function buildFareBreakdown({
+  distance,
+  categoryKey,
+  serviceKey,
+  waitMinutes = 0,
+  routeType = "local",
+  personnelSurcharge = 0,
+  driverToPickupDistanceKm = null
+}) {
   const services = serviceCatalog[categoryKey] || serviceCatalog.pickup_mini;
   const service = services[serviceKey] || Object.values(services)[0];
   const rateCard = categoryRateCard[categoryKey] || categoryRateCard.pickup_mini;
+  const categoryConfig =
+    adminPricingConfig.categories?.[categoryKey] ||
+    adminPricingConfig.categories?.pickup_mini ||
+    defaultAdminPricingConfig.categories.pickup_mini;
+  const operatingProfile = categoryConfig.operatingProfile || defaultAdminPricingConfig.categories.pickup_mini.operatingProfile;
 
-  const normalizedDistance = Math.max(0, Number(distance) || 0);
+  const normalizedDistance = Math.max(0, Number(distance) || 0); // Distancia B -> C
+  const hasExplicitDriverToPickup =
+    driverToPickupDistanceKm !== null &&
+    driverToPickupDistanceKm !== undefined &&
+    String(driverToPickupDistanceKm).trim() !== "";
+  const normalizedDriverToPickupDistance = hasExplicitDriverToPickup
+    ? Math.max(0, Number(driverToPickupDistanceKm) || 0)
+    : Number((normalizedDistance * (Number(adminPricingConfig.driverToPickupDistanceRatio) || 0)).toFixed(2));
+  const totalOperationalDistance = normalizedDistance + normalizedDriverToPickupDistance; // A -> B + B -> C
   const normalizedWait = Math.max(0, Number(waitMinutes) || 0);
   const normalizedPersonnel = Math.max(0, Number(personnelSurcharge) || 0);
   const demandFactor = 1 + Math.random() * 0.12;
   const includedKm = Math.max(0, Number(tripRules.includedKmInStartFare) || 0);
   const billableDistance = Math.max(0, normalizedDistance - includedKm);
 
-  const subtotal =
+  const marketSubtotal =
     rateCard.startFare +
     billableDistance * rateCard.perKm +
     normalizedWait * rateCard.waitPerMin +
     normalizedPersonnel;
 
   const routeMultiplier = routeType === "foraneo" ? tripRules.foraneoMultiplier : 1;
-  const total = subtotal * (service.multiplier ?? 1) * routeMultiplier * demandFactor;
-  return Number(total.toFixed(2));
+  const marketFare = marketSubtotal * (service.multiplier ?? 1) * routeMultiplier * demandFactor;
+
+  const fuelEfficiencyKmPerLiter = Math.max(1, Number(operatingProfile.fuelEfficiencyKmPerLiter) || 1);
+  const fuelPricePerLiter = Math.max(0, Number(adminPricingConfig.fuelPricePerLiter) || 0);
+  const fuelLiters = totalOperationalDistance / fuelEfficiencyKmPerLiter;
+  const fuelCost = fuelLiters * fuelPricePerLiter;
+
+  const variablePerKm =
+    (Number(operatingProfile.maintenancePerKm) || 0) +
+    (Number(operatingProfile.depreciationPerKm) || 0) +
+    (Number(operatingProfile.insurancePerKm) || 0) +
+    (Number(operatingProfile.permitsPerKm) || 0);
+  const vehicleVariableCost = totalOperationalDistance * variablePerKm;
+
+  const avgSpeedKmhNoTraffic = Math.max(5, Number(operatingProfile.avgSpeedKmhNoTraffic) || 5);
+  const driverToPickupMinutes = (normalizedDriverToPickupDistance / avgSpeedKmhNoTraffic) * 60;
+  const operationalMinutesWithDispatch = normalizedWait + driverToPickupMinutes;
+  const driverHourlyTarget =
+    (Math.max(0, Number(adminPricingConfig.driverNetDailyTarget) || 0) /
+      Math.max(1, Number(adminPricingConfig.driverWorkHoursPerDay) || 1));
+  const driverTargetForTrip = driverHourlyTarget * (operationalMinutesWithDispatch / 60);
+
+  const operationalCostBase =
+    driverTargetForTrip +
+    fuelCost +
+    vehicleVariableCost +
+    normalizedPersonnel;
+  const appCommissionCost =
+    operationalCostBase * (Math.max(0, Number(adminPricingConfig.appCommissionRatePct) || 0) / 100);
+  const fiscalReserveCost =
+    operationalCostBase * (Math.max(0, Number(adminPricingConfig.fiscalReserveRatePct) || 0) / 100);
+
+  const preTaxFare = Math.max(marketFare, operationalCostBase + appCommissionCost + fiscalReserveCost);
+  const vatAmount = preTaxFare * (Math.max(0, Number(adminPricingConfig.vatRatePct) || 0) / 100);
+  const totalFare = preTaxFare + vatAmount;
+
+  return {
+    fareEstimate: Number(totalFare.toFixed(2)),
+    breakdown: {
+      distanceBC: Number(normalizedDistance.toFixed(2)),
+      distanceAB: Number(normalizedDriverToPickupDistance.toFixed(2)),
+      totalOperationalDistance: Number(totalOperationalDistance.toFixed(2)),
+      operationalMinutes: Number(normalizedWait.toFixed(2)),
+      driverToPickupMinutes: Number(driverToPickupMinutes.toFixed(2)),
+      operationalMinutesWithDispatch: Number(operationalMinutesWithDispatch.toFixed(2)),
+      marketFare: Number(marketFare.toFixed(2)),
+      operationalCostBase: Number(operationalCostBase.toFixed(2)),
+      fuelCost: Number(fuelCost.toFixed(2)),
+      fuelLiters: Number(fuelLiters.toFixed(2)),
+      vehicleVariableCost: Number(vehicleVariableCost.toFixed(2)),
+      driverTargetForTrip: Number(driverTargetForTrip.toFixed(2)),
+      appCommissionCost: Number(appCommissionCost.toFixed(2)),
+      fiscalReserveCost: Number(fiscalReserveCost.toFixed(2)),
+      preTaxFare: Number(preTaxFare.toFixed(2)),
+      vatAmount: Number(vatAmount.toFixed(2)),
+      serviceMultiplier: Number((service.multiplier ?? 1).toFixed(3)),
+      routeMultiplier: Number(routeMultiplier.toFixed(3)),
+      demandFactor: Number(demandFactor.toFixed(3)),
+      appCommissionRatePct: Number((Number(adminPricingConfig.appCommissionRatePct) || 0).toFixed(2)),
+      vatRatePct: Number((Number(adminPricingConfig.vatRatePct) || 0).toFixed(2)),
+      fiscalReserveRatePct: Number((Number(adminPricingConfig.fiscalReserveRatePct) || 0).toFixed(2)),
+      driverHourlyTarget: Number(driverHourlyTarget.toFixed(2)),
+      fuelEfficiencyKmPerLiter: Number(fuelEfficiencyKmPerLiter.toFixed(2)),
+      fuelPricePerLiter: Number(fuelPricePerLiter.toFixed(2)),
+      avgSpeedKmhNoTraffic: Number(avgSpeedKmhNoTraffic.toFixed(2)),
+      variablePerKm: Number(variablePerKm.toFixed(2))
+    }
+  };
+}
+
+function resolveOptionalManeuverCharge({
+  selectedValue,
+  distanceMetersValue,
+  maxDistanceMeters = DEFAULT_MANEUVER_MAX_DISTANCE_METERS,
+  loaderPayPerTrip = DEFAULT_MANEUVER_LOADER_PAY_PER_TRIP,
+  platformMarginRate = DEFAULT_MANEUVER_PLATFORM_MARGIN_RATE
+}) {
+  const selected = parseBooleanEnv(selectedValue, false);
+  const hasDistanceValue =
+    distanceMetersValue !== undefined &&
+    distanceMetersValue !== null &&
+    String(distanceMetersValue).trim() !== "";
+  const normalizedDistanceMeters = hasDistanceValue
+    ? Number(distanceMetersValue)
+    : null;
+
+  if (selected && !Number.isFinite(normalizedDistanceMeters)) {
+    return {
+      selected,
+      valid: false,
+      error: "Si seleccionas maniobra de carga/descarga debes indicar distanceMeters válido."
+    };
+  }
+
+  const distanceMeters = Number.isFinite(normalizedDistanceMeters)
+    ? Math.max(0, Number(normalizedDistanceMeters) || 0)
+    : 0;
+  const eligible = selected && distanceMeters <= maxDistanceMeters;
+  const normalizedLoaderPayPerTrip = Math.max(0, Number(loaderPayPerTrip) || 0);
+  const normalizedPlatformMarginRate = Math.max(0, Number(platformMarginRate) || 0);
+  const platformMarginAmount = normalizedLoaderPayPerTrip * normalizedPlatformMarginRate;
+  const chargeToCustomerPerTrip = normalizedLoaderPayPerTrip + platformMarginAmount;
+
+  if (selected && !eligible) {
+    return {
+      selected,
+      valid: false,
+      error: `La maniobra de carga/descarga solo aplica hasta ${maxDistanceMeters} metros del vehículo.`
+    };
+  }
+
+  return {
+    selected,
+    valid: true,
+    distanceMeters: Number(distanceMeters.toFixed(2)),
+    eligible,
+    loaderPayPerTrip: Number(normalizedLoaderPayPerTrip.toFixed(2)),
+    platformMarginRate: Number(normalizedPlatformMarginRate.toFixed(4)),
+    platformMarginAmount: Number(platformMarginAmount.toFixed(2)),
+    surcharge: eligible ? Number(chargeToCustomerPerTrip.toFixed(2)) : 0,
+    maxDistanceMeters: Number(maxDistanceMeters.toFixed(2)),
+    chargeToCustomerPerTrip: Number(chargeToCustomerPerTrip.toFixed(2))
+  };
+}
+
+function estimateFare(
+  distance,
+  categoryKey,
+  serviceKey,
+  waitMinutes = 0,
+  routeType = "local",
+  personnelSurcharge = 0,
+  driverToPickupDistanceKm = null
+) {
+  return buildFareBreakdown({
+    distance,
+    categoryKey,
+    serviceKey,
+    waitMinutes,
+    routeType,
+    personnelSurcharge,
+    driverToPickupDistanceKm
+  }).fareEstimate;
 }
 
 function etaMinutes(driver, pickupPoint) {
@@ -2889,6 +3353,9 @@ function serializeRide(ride) {
     status: ride.status,
     assignmentState: ride.assignmentState || "searching",
     requestType: ride.requestType || "urgent",
+    maneuverSelected: ride.maneuverSelected === true,
+    maneuverDistanceMeters: Number(ride.maneuverDistanceMeters || 0),
+    maneuverSurcharge: Number(ride.maneuverSurcharge || 0),
     requestedAt: ride.requestedAt,
     scheduledAt: ride.scheduledAt || null,
     fareEstimate: ride.fareEstimate,
@@ -3152,11 +3619,35 @@ app.get("/api/addresses/reverse", async (req, res) => {
   }
 });
 
+function getVisibleCategoryKeysForMarketplace() {
+  const configured = Array.isArray(adminPricingConfig.marketplaceVisibleCategories)
+    ? adminPricingConfig.marketplaceVisibleCategories
+    : ["specialized_1t"];
+
+  return [...new Set(
+    configured
+      .map((value) => String(value || "").trim())
+      .filter((key) => Boolean(vehicleCategories[key]))
+  )];
+}
+
+function getVisibleCategoriesMap() {
+  return getVisibleCategoryKeysForMarketplace().reduce((acc, key) => {
+    acc[key] = vehicleCategories[key];
+    return acc;
+  }, {});
+}
+
 app.get("/api/categories", (_req, res) => {
-  res.json(vehicleCategories);
+  res.json(getVisibleCategoriesMap());
 });
 
 app.get("/api/services/:category", (req, res) => {
+  const visibleCategories = new Set(getVisibleCategoryKeysForMarketplace());
+  if (!visibleCategories.has(req.params.category)) {
+    return res.status(404).json({ error: "Categoría no disponible por ahora" });
+  }
+
   const services = serviceCatalog[req.params.category];
   if (!services) {
     return res.status(404).json({ error: "Categoría no encontrada" });
@@ -3165,7 +3656,10 @@ app.get("/api/services/:category", (req, res) => {
 });
 
 app.get("/api/pricing", (_req, res) => {
-  const pricing = Object.entries(categoryRateCard).map(([categoryKey, rates]) => ({
+  const visibleCategories = new Set(getVisibleCategoryKeysForMarketplace());
+  const pricing = Object.entries(categoryRateCard)
+    .filter(([categoryKey]) => visibleCategories.has(categoryKey))
+    .map(([categoryKey, rates]) => ({
     category: categoryKey,
     categoryLabel: vehicleCategories[categoryKey]?.label || categoryKey,
     startFare: rates.startFare,
@@ -3173,7 +3667,7 @@ app.get("/api/pricing", (_req, res) => {
     waitPerMinRate: rates.waitPerMin,
     includedKmInStartFare: tripRules.includedKmInStartFare,
     currency: "MXN"
-  }));
+    }));
   res.json(pricing);
 });
 
@@ -3206,6 +3700,78 @@ app.get("/api/drivers/:id/ratings", (req, res) => {
 
 app.use("/api/admin", requireAnyRole("admin"));
 app.use("/api/driver", requireAnyRole("driver", "admin"));
+
+app.post("/api/driver/profile-auth/link", (req, res) => {
+  const phone = normalizePhoneDigits(req.body?.phone);
+  const licenseNumber = normalizeLicenseNumber(req.body?.licenseNumber);
+  const pin = String(req.body?.pin || "").trim();
+
+  if (!phone || !licenseNumber || !isValidDriverPin(pin)) {
+    return res.status(400).json({ error: "Debes enviar telefono, licencia y PIN de 4 digitos." });
+  }
+
+  const adminDriver = adminDrivers.find((item) =>
+    normalizePhoneDigits(item.phone) === phone &&
+    normalizeLicenseNumber(item.licenseNumber) === licenseNumber
+  );
+
+  if (!adminDriver) {
+    return res.status(404).json({ error: "No se encontro un chofer con esos datos." });
+  }
+
+  const hasPin = Boolean(String(adminDriver.driverPinHash || "").trim());
+  if (hasPin && adminDriver.driverPinHash !== hashDriverPin(pin)) {
+    return res.status(401).json({ error: "PIN incorrecto." });
+  }
+
+  let normalizedDriver = adminDriver;
+  if (!hasPin) {
+    const merged = normalizeAdminDriverRecord({
+      ...adminDriver,
+      driverPin: pin
+    }, { existingId: adminDriver.id });
+    adminDrivers = saveAdminDrivers(adminDrivers.map((item) => (item.id === adminDriver.id ? merged : item)));
+    normalizedDriver = merged;
+    appendAdminDriverAudit({
+      driverId: merged.id,
+      action: "pin_setup",
+      details: "PIN de chofer configurado desde app de chofer"
+    });
+  }
+
+  const runtimeDriver = upsertRuntimeDriverFromAdmin(normalizedDriver);
+  broadcastDrivers();
+  return res.json({
+    ok: true,
+    driver: runtimeDriver
+  });
+});
+
+app.post("/api/driver/profile-auth/unlock", (req, res) => {
+  const driverId = String(req.body?.driverId || "").trim();
+  const pin = String(req.body?.pin || "").trim();
+
+  if (!driverId || !isValidDriverPin(pin)) {
+    return res.status(400).json({ error: "Debes enviar driverId y PIN de 4 digitos." });
+  }
+
+  const adminDriver = adminDrivers.find((item) => item.id === driverId);
+  if (!adminDriver) {
+    return res.status(404).json({ error: "Chofer no encontrado para validar PIN." });
+  }
+
+  const expectedHash = String(adminDriver.driverPinHash || "").trim();
+  if (!expectedHash) {
+    return res.status(428).json({ error: "Este chofer no tiene PIN configurado." });
+  }
+
+  if (expectedHash !== hashDriverPin(pin)) {
+    return res.status(401).json({ error: "PIN incorrecto." });
+  }
+
+  const runtimeDriver = upsertRuntimeDriverFromAdmin(adminDriver);
+  return res.json({ ok: true, driver: runtimeDriver });
+});
 
 app.get("/api/driver/ratings", (req, res) => {
   const driverId = String(req.query.driverId || "").trim();
@@ -3329,6 +3895,17 @@ app.patch("/api/drivers/:id/availability", (req, res) => {
   }
 
   driver.available = available;
+
+  const adminIndex = adminDrivers.findIndex((item) => item.id === id);
+  if (adminIndex >= 0) {
+    const normalized = normalizeAdminDriverRecord(
+      { ...adminDrivers[adminIndex], available },
+      { existingId: id }
+    );
+    adminDrivers[adminIndex] = normalized;
+    adminDrivers = saveAdminDrivers(adminDrivers);
+  }
+
   broadcastDrivers();
   return res.json(driver);
 });
@@ -3648,6 +4225,11 @@ app.post("/api/admin/vehicles", (req, res) => {
     return res.status(400).json({ error: "Datos de vehiculo invalidos. Revisa placa y categoria." });
   }
 
+  const vehicleComplianceError = validateVehicleDocumentCompliance(normalized);
+  if (vehicleComplianceError) {
+    return res.status(400).json({ error: vehicleComplianceError });
+  }
+
   const duplicate = adminVehicles.some((item) => item.plateNumber === normalized.plateNumber);
   if (duplicate) {
     return res.status(409).json({ error: "La placa ya existe en el registro." });
@@ -3673,6 +4255,11 @@ app.put("/api/admin/vehicles/:id", (req, res) => {
   const normalized = normalizeAdminVehicleRecord(mergedPayload, { existingId: id });
   if (!normalized) {
     return res.status(400).json({ error: "Datos de vehiculo invalidos" });
+  }
+
+  const vehicleComplianceError = validateVehicleDocumentCompliance(normalized);
+  if (vehicleComplianceError) {
+    return res.status(400).json({ error: vehicleComplianceError });
   }
 
   const duplicate = adminVehicles.some((item) => item.id !== id && item.plateNumber === normalized.plateNumber);
@@ -3985,6 +4572,8 @@ app.patch("/api/admin/drivers/:id/suspension", (req, res) => {
   );
 
   adminDrivers = saveAdminDrivers(adminDrivers.map((item) => (item.id === id ? normalized : item)));
+  upsertRuntimeDriverFromAdmin(normalized);
+  broadcastDrivers();
   appendAdminDriverAudit({
     driverId: normalized.id,
     action: "suspension",
@@ -4180,12 +4769,19 @@ app.post("/api/admin/drivers", (req, res) => {
     return res.status(400).json({ error: "Datos de chofer invalidos. Revisa nombre, telefono, categoria y licencia." });
   }
 
+  const driverComplianceError = validateDriverDocumentCompliance(normalized);
+  if (driverComplianceError) {
+    return res.status(400).json({ error: driverComplianceError });
+  }
+
   const duplicatePhone = adminDrivers.some((item) => item.phone === normalized.phone);
   if (duplicatePhone) {
     return res.status(409).json({ error: "Ya existe un chofer con ese telefono." });
   }
 
   adminDrivers = saveAdminDrivers([normalized, ...adminDrivers]);
+  upsertRuntimeDriverFromAdmin(normalized);
+  broadcastDrivers();
   appendAdminDriverAudit({
     driverId: normalized.id,
     action: "create",
@@ -4216,12 +4812,19 @@ app.put("/api/admin/drivers/:id", (req, res) => {
     return res.status(400).json({ error: "Datos de chofer invalidos" });
   }
 
+  const driverComplianceError = validateDriverDocumentCompliance(normalized);
+  if (driverComplianceError) {
+    return res.status(400).json({ error: driverComplianceError });
+  }
+
   const duplicatePhone = adminDrivers.some((item) => item.id !== id && item.phone === normalized.phone);
   if (duplicatePhone) {
     return res.status(409).json({ error: "Ese telefono ya esta registrado en otro chofer." });
   }
 
   adminDrivers = saveAdminDrivers(adminDrivers.map((item) => (item.id === id ? normalized : item)));
+  upsertRuntimeDriverFromAdmin(normalized);
+  broadcastDrivers();
   appendAdminDriverAudit({
     driverId: normalized.id,
     action: "update",
@@ -4252,6 +4855,8 @@ app.patch("/api/admin/drivers/:id/status", (req, res) => {
   }
 
   adminDrivers = saveAdminDrivers(adminDrivers.map((item) => (item.id === id ? normalized : item)));
+  upsertRuntimeDriverFromAdmin(normalized);
+  broadcastDrivers();
   appendAdminDriverAudit({
     driverId: normalized.id,
     action: "status",
@@ -4282,6 +4887,8 @@ app.patch("/api/admin/drivers/:id/availability", (req, res) => {
   }
 
   adminDrivers = saveAdminDrivers(adminDrivers.map((item) => (item.id === id ? normalized : item)));
+  upsertRuntimeDriverFromAdmin(normalized);
+  broadcastDrivers();
   appendAdminDriverAudit({
     driverId: normalized.id,
     action: "availability",
@@ -4307,6 +4914,8 @@ app.delete("/api/admin/drivers/:id", (req, res) => {
     details: "Baja de chofer"
   });
   adminDrivers = saveAdminDrivers(adminDrivers.filter((item) => item.id !== id));
+  removeRuntimeDriverById(id);
+  broadcastDrivers();
   return res.json({ ok: true, drivers: adminDrivers.map(adminDriverWithRating) });
 });
 
@@ -4331,6 +4940,25 @@ app.put("/api/admin/pricing-config", (req, res) => {
   const defaultUnloadingMinutes = numericField("defaultUnloadingMinutes", 0);
   const loadPersonnelUnitCost = numericField("loadPersonnelUnitCost", 0);
   const unloadPersonnelUnitCost = numericField("unloadPersonnelUnitCost", 0);
+  const driverNetDailyTarget = numericField("driverNetDailyTarget", 0);
+  const driverWorkHoursPerDay = numericField("driverWorkHoursPerDay", 1);
+  const fuelPricePerLiter = numericField("fuelPricePerLiter", 0);
+  const appCommissionRatePct = numericField("appCommissionRatePct", 0);
+  const vatRatePct = numericField("vatRatePct", 0);
+  const fiscalReserveRatePct = numericField("fiscalReserveRatePct", 0);
+  const maneuverPlatformMarginRate = numericField("maneuverPlatformMarginRate", 0);
+  const marketplaceVisibleCategoriesRaw = Array.isArray(payload.marketplaceVisibleCategories)
+    ? payload.marketplaceVisibleCategories
+    : [];
+  const marketplaceVisibleCategories = [...new Set(
+    marketplaceVisibleCategoriesRaw
+      .map((value) => String(value || "").trim())
+      .filter((value) => Boolean(vehicleCategories[value]))
+  )];
+  if (marketplaceVisibleCategories.length === 0) {
+    marketplaceVisibleCategories.push("specialized_1t");
+  }
+  const driverToPickupDistanceRatio = numericField("driverToPickupDistanceRatio", 0);
 
   const categoriesPayload = payload.categories && typeof payload.categories === "object" ? payload.categories : null;
   if (!categoriesPayload) {
@@ -4348,6 +4976,10 @@ app.put("/api/admin/pricing-config", (req, res) => {
     const startFare = Number(rawCategory.startFare);
     const extraKmRate = Number(rawCategory.extraKmRate);
     const operationalPerMinRate = Number(rawCategory.operationalPerMinRate);
+    const rawOperatingProfile =
+      rawCategory.operatingProfile && typeof rawCategory.operatingProfile === "object"
+        ? rawCategory.operatingProfile
+        : null;
 
     if (!Number.isFinite(startFare) || startFare < 0) {
       validationErrors.push(`categories.${categoryKey}.startFare inválido`);
@@ -4359,10 +4991,48 @@ app.put("/api/admin/pricing-config", (req, res) => {
       validationErrors.push(`categories.${categoryKey}.operationalPerMinRate inválido`);
     }
 
+    if (!rawOperatingProfile) {
+      validationErrors.push(`categories.${categoryKey}.operatingProfile inválido`);
+    }
+
+    const fuelEfficiencyKmPerLiter = Number(rawOperatingProfile?.fuelEfficiencyKmPerLiter);
+    const avgSpeedKmhNoTraffic = Number(rawOperatingProfile?.avgSpeedKmhNoTraffic);
+    const maintenancePerKm = Number(rawOperatingProfile?.maintenancePerKm);
+    const depreciationPerKm = Number(rawOperatingProfile?.depreciationPerKm);
+    const insurancePerKm = Number(rawOperatingProfile?.insurancePerKm);
+    const permitsPerKm = Number(rawOperatingProfile?.permitsPerKm);
+
+    if (!Number.isFinite(fuelEfficiencyKmPerLiter) || fuelEfficiencyKmPerLiter <= 0) {
+      validationErrors.push(`categories.${categoryKey}.operatingProfile.fuelEfficiencyKmPerLiter inválido`);
+    }
+    if (!Number.isFinite(avgSpeedKmhNoTraffic) || avgSpeedKmhNoTraffic <= 0) {
+      validationErrors.push(`categories.${categoryKey}.operatingProfile.avgSpeedKmhNoTraffic inválido`);
+    }
+    if (!Number.isFinite(maintenancePerKm) || maintenancePerKm < 0) {
+      validationErrors.push(`categories.${categoryKey}.operatingProfile.maintenancePerKm inválido`);
+    }
+    if (!Number.isFinite(depreciationPerKm) || depreciationPerKm < 0) {
+      validationErrors.push(`categories.${categoryKey}.operatingProfile.depreciationPerKm inválido`);
+    }
+    if (!Number.isFinite(insurancePerKm) || insurancePerKm < 0) {
+      validationErrors.push(`categories.${categoryKey}.operatingProfile.insurancePerKm inválido`);
+    }
+    if (!Number.isFinite(permitsPerKm) || permitsPerKm < 0) {
+      validationErrors.push(`categories.${categoryKey}.operatingProfile.permitsPerKm inválido`);
+    }
+
     normalizedCategories[categoryKey] = {
       startFare: Number((Number.isFinite(startFare) ? startFare : 0).toFixed(2)),
       extraKmRate: Number((Number.isFinite(extraKmRate) ? extraKmRate : 0).toFixed(2)),
-      operationalPerMinRate: Number((Number.isFinite(operationalPerMinRate) ? operationalPerMinRate : 0).toFixed(2))
+      operationalPerMinRate: Number((Number.isFinite(operationalPerMinRate) ? operationalPerMinRate : 0).toFixed(2)),
+      operatingProfile: {
+        fuelEfficiencyKmPerLiter: Number((Number.isFinite(fuelEfficiencyKmPerLiter) ? fuelEfficiencyKmPerLiter : 1).toFixed(2)),
+        avgSpeedKmhNoTraffic: Number((Number.isFinite(avgSpeedKmhNoTraffic) ? avgSpeedKmhNoTraffic : 5).toFixed(2)),
+        maintenancePerKm: Number((Number.isFinite(maintenancePerKm) ? maintenancePerKm : 0).toFixed(2)),
+        depreciationPerKm: Number((Number.isFinite(depreciationPerKm) ? depreciationPerKm : 0).toFixed(2)),
+        insurancePerKm: Number((Number.isFinite(insurancePerKm) ? insurancePerKm : 0).toFixed(2)),
+        permitsPerKm: Number((Number.isFinite(permitsPerKm) ? permitsPerKm : 0).toFixed(2))
+      }
     };
   });
 
@@ -4380,6 +5050,15 @@ app.put("/api/admin/pricing-config", (req, res) => {
     defaultUnloadingMinutes: Number(defaultUnloadingMinutes.toFixed(2)),
     loadPersonnelUnitCost: Number(loadPersonnelUnitCost.toFixed(2)),
     unloadPersonnelUnitCost: Number(unloadPersonnelUnitCost.toFixed(2)),
+    driverNetDailyTarget: Number(driverNetDailyTarget.toFixed(2)),
+    driverWorkHoursPerDay: Number(driverWorkHoursPerDay.toFixed(2)),
+    fuelPricePerLiter: Number(fuelPricePerLiter.toFixed(2)),
+    appCommissionRatePct: Number(appCommissionRatePct.toFixed(2)),
+    vatRatePct: Number(vatRatePct.toFixed(2)),
+    fiscalReserveRatePct: Number(fiscalReserveRatePct.toFixed(2)),
+    maneuverPlatformMarginRate: Number(maneuverPlatformMarginRate.toFixed(4)),
+    marketplaceVisibleCategories,
+    driverToPickupDistanceRatio: Number(driverToPickupDistanceRatio.toFixed(4)),
     categories: normalizedCategories
   };
 
@@ -4411,19 +5090,41 @@ app.get("/api/quote", (req, res) => {
   const operationalMinutes = hasWaitOverride
     ? Math.max(0, Number(req.query.waitMinutes) || 0)
     : Number((loadingMinutes + transferMinutes + unloadingMinutes).toFixed(2));
-  const loadPersonnelCount = Math.max(0, Number(req.query.loadPersonnelCount || 0) || 0);
-  const unloadPersonnelCount = Math.max(0, Number(req.query.unloadPersonnelCount || 0) || 0);
-  const personnelSurcharge = Number((
-    loadPersonnelCount * adminPricingConfig.loadPersonnelUnitCost +
-    unloadPersonnelCount * adminPricingConfig.unloadPersonnelUnitCost
-  ).toFixed(2));
+  const maneuverInfo = resolveOptionalManeuverCharge({
+    selectedValue: req.query.maneuverSelected ?? req.query.includeLoadingUnloadingManeuver,
+    distanceMetersValue: req.query.maneuverDistanceMeters ?? req.query.loadingUnloadingDistanceMeters,
+    loaderPayPerTrip: DEFAULT_MANEUVER_LOADER_PAY_PER_TRIP,
+    platformMarginRate: adminPricingConfig.maneuverPlatformMarginRate
+  });
+  if (!maneuverInfo.valid) {
+    return res.status(400).json({ error: maneuverInfo.error });
+  }
+  const loadPersonnelCount = 0;
+  const unloadPersonnelCount = 0;
+  const personnelSurcharge = Number((maneuverInfo.surcharge || 0).toFixed(2));
+  const rawDriverToPickupDistance =
+    req.query.driverToPickupDistanceKm !== undefined
+      ? Number(req.query.driverToPickupDistanceKm)
+      : null;
+  const driverToPickupDistanceKm = Number.isFinite(rawDriverToPickupDistance)
+    ? Math.max(0, Number(rawDriverToPickupDistance) || 0)
+    : null;
 
   const services = serviceCatalog[category];
   if (!services || !services[service]) {
     return res.status(400).json({ error: "Categoría o servicio inválido" });
   }
 
-  const fareEstimate = estimateFare(distance, category, service, operationalMinutes, routeType, personnelSurcharge);
+  const fareResult = buildFareBreakdown({
+    distance,
+    categoryKey: category,
+    serviceKey: service,
+    waitMinutes: operationalMinutes,
+    routeType,
+    personnelSurcharge,
+    driverToPickupDistanceKm
+  });
+  const fareEstimate = fareResult.fareEstimate;
   const rateCard = categoryRateCard[category] || categoryRateCard.pickup_mini;
   const includedKm = Math.max(0, Number(tripRules.includedKmInStartFare) || 0);
   const billableDistance = Math.max(0, distance - includedKm);
@@ -4445,10 +5146,22 @@ app.get("/api/quote", (req, res) => {
     operationalMinutes,
     loadPersonnelCount,
     unloadPersonnelCount,
+    maneuverSelected: maneuverInfo.selected,
+    maneuverDistanceMeters: maneuverInfo.distanceMeters,
+    maneuverEligible: maneuverInfo.eligible,
+    maneuverMaxDistanceMeters: maneuverInfo.maxDistanceMeters,
+    maneuverLoaderPayPerTrip: maneuverInfo.loaderPayPerTrip,
+    maneuverPlatformMarginRate: maneuverInfo.platformMarginRate,
+    maneuverPlatformMarginAmount: maneuverInfo.platformMarginAmount,
+    maneuverSurchargePerTrip: maneuverInfo.chargeToCustomerPerTrip,
+    maneuverSurcharge: personnelSurcharge,
     loadPersonnelUnitCost: adminPricingConfig.loadPersonnelUnitCost,
     unloadPersonnelUnitCost: adminPricingConfig.unloadPersonnelUnitCost,
     personnelSurcharge,
     fareEstimate,
+    driverToPickupDistanceKm:
+      fareResult.breakdown?.distanceAB ?? driverToPickupDistanceKm,
+    costBreakdown: fareResult.breakdown,
     startFare: rateCard.startFare,
     perKmRate: rateCard.perKm,
     waitPerMinRate: rateCard.waitPerMin,
@@ -4467,7 +5180,9 @@ app.post("/api/rides", (req, res) => {
     scheduledAt,
     requestType,
     customer,
-    notificationPreferences
+    notificationPreferences,
+    maneuverSelected,
+    maneuverDistanceMeters
   } = req.body || {};
   const requestedDistance = Math.max(0, Number(distance) || 0);
   const tripDistanceKm = requestedDistance || randomTripDistance();
@@ -4505,6 +5220,15 @@ app.post("/api/rides", (req, res) => {
     whatsapp: notificationPreferences?.whatsapp === true,
     sms: notificationPreferences?.sms === true
   };
+  const maneuverInfo = resolveOptionalManeuverCharge({
+    selectedValue: maneuverSelected,
+    distanceMetersValue: maneuverDistanceMeters,
+    loaderPayPerTrip: DEFAULT_MANEUVER_LOADER_PAY_PER_TRIP,
+    platformMarginRate: adminPricingConfig.maneuverPlatformMarginRate
+  });
+  if (!maneuverInfo.valid) {
+    return res.status(400).json({ error: maneuverInfo.error });
+  }
 
   if (!pickup || !dropoff || !serviceCatalog[category] || !serviceCatalog[category][effectiveService]) {
     return res.status(400).json({
@@ -4537,6 +5261,9 @@ app.post("/api/rides", (req, res) => {
     assignmentState: normalizedScheduledAt ? "scheduled" : "searching",
     tripDistanceKm,
     fareEstimate: 0,
+    maneuverSelected: maneuverInfo.selected,
+    maneuverDistanceMeters: maneuverInfo.distanceMeters,
+    maneuverSurcharge: maneuverInfo.surcharge,
     etaMin: null,
     driver: null,
     customer: serializeRideCustomer(customerRecord),
@@ -4547,9 +5274,23 @@ app.post("/api/rides", (req, res) => {
     progress: 0
   };
 
-  ride.fareEstimate = estimateFare(ride.tripDistanceKm, ride.category, ride.service, 0, ride.routeType);
+  ride.fareEstimate = estimateFare(
+    ride.tripDistanceKm,
+    ride.category,
+    ride.service,
+    0,
+    ride.routeType,
+    ride.maneuverSurcharge,
+    null
+  );
   appendTimeline(ride, buildRideRequestLabel(normalizedRequestType, normalizedScheduledAt));
   appendTimeline(ride, "Buscando conductor en tu categoría");
+  if (ride.maneuverSelected) {
+    appendTimeline(
+      ride,
+      `Incluye maniobra de carga/descarga (+MXN ${Number(ride.maneuverSurcharge || 0).toFixed(2)})`
+    );
+  }
 
   rides.set(ride.id, ride);
   broadcastRide(ride);

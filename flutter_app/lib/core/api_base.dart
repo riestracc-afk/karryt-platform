@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-const _productionApiBaseUrl = 'https://project-404e35e2-6a5d-421b-970.web.app';
+const _productionApiBaseUrl = 'https://karryt-api-502814108153.us-central1.run.app';
 
 String resolveApiBaseUrl() {
   const fromDefine = String.fromEnvironment('API_BASE_URL');

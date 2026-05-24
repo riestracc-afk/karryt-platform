@@ -1,32 +1,75 @@
 {
-  "foraneoThresholdKm": 40,
+  "foraneoThresholdKm": 22,
   "includedKmInStartFare": 10,
-  "foraneoMultiplier": 1.2,
+  "foraneoMultiplier": 1.5,
   "defaultLoadingMinutes": 30,
-  "defaultTransferMinutes": 30,
+  "defaultTransferMinutes": 20,
   "defaultUnloadingMinutes": 30,
-  "loadPersonnelUnitCost": 150,
-  "unloadPersonnelUnitCost": 150,
+  "loadPersonnelUnitCost": 80,
+  "unloadPersonnelUnitCost": 80,
+  "driverNetDailyTarget": 1200,
+  "driverWorkHoursPerDay": 8,
+  "fuelPricePerLiter": 28.22,
+  "appCommissionRatePct": 25,
+  "vatRatePct": 16,
+  "fiscalReserveRatePct": 3,
+  "maneuverPlatformMarginRate": 0.2,
+  "marketplaceVisibleCategories": [
+    "specialized_1t"
+  ],
+  "driverToPickupDistanceRatio": 0.35,
   "categories": {
     "pickup_mini": {
-      "startFare": 150,
-      "extraKmRate": 10,
-      "operationalPerMinRate": 4
+      "startFare": 129,
+      "extraKmRate": 15,
+      "operationalPerMinRate": 3.5,
+      "operatingProfile": {
+        "fuelEfficiencyKmPerLiter": 9,
+        "avgSpeedKmhNoTraffic": 30,
+        "maintenancePerKm": 1.2,
+        "depreciationPerKm": 1.5,
+        "insurancePerKm": 0.8,
+        "permitsPerKm": 0.5
+      }
     },
     "specialized_1t": {
-      "startFare": 300,
-      "extraKmRate": 14,
-      "operationalPerMinRate": 5
+      "startFare": 250,
+      "extraKmRate": 25,
+      "operationalPerMinRate": 5,
+      "operatingProfile": {
+        "fuelEfficiencyKmPerLiter": 8,
+        "avgSpeedKmhNoTraffic": 28,
+        "maintenancePerKm": 1.6,
+        "depreciationPerKm": 2.1,
+        "insurancePerKm": 1.1,
+        "permitsPerKm": 0.8
+      }
     },
     "truck_3t": {
-      "startFare": 700,
-      "extraKmRate": 18,
-      "operationalPerMinRate": 8
+      "startFare": 580,
+      "extraKmRate": 37.5,
+      "operationalPerMinRate": 6.6,
+      "operatingProfile": {
+        "fuelEfficiencyKmPerLiter": 5,
+        "avgSpeedKmhNoTraffic": 24,
+        "maintenancePerKm": 2.4,
+        "depreciationPerKm": 3.6,
+        "insurancePerKm": 1.8,
+        "permitsPerKm": 1.4
+      }
     },
     "dump_truck": {
-      "startFare": 1800,
-      "extraKmRate": 30,
-      "operationalPerMinRate": 12
+      "startFare": 1250,
+      "extraKmRate": 62.5,
+      "operationalPerMinRate": 10,
+      "operatingProfile": {
+        "fuelEfficiencyKmPerLiter": 4,
+        "avgSpeedKmhNoTraffic": 20,
+        "maintenancePerKm": 3,
+        "depreciationPerKm": 4.5,
+        "insurancePerKm": 2.2,
+        "permitsPerKm": 1.8
+      }
     }
   }
 }

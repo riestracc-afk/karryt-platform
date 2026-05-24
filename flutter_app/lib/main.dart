@@ -16,7 +16,9 @@ import 'package:flutter/services.dart'
     show
         Clipboard,
         ClipboardData,
+        FilteringTextInputFormatter,
         HapticFeedback,
+        LengthLimitingTextInputFormatter,
         LogicalKeyboardKey,
         SystemSound,
         SystemSoundType,
@@ -2040,6 +2042,9 @@ class _RideScreenState extends State<RideScreen> {
   bool _routeLoading = false;
   double? _routeDistanceKm;
   int? _etaMinutes;
+  bool _maneuverSelected = false;
+  final TextEditingController _maneuverDistanceController =
+      TextEditingController(text: '0');
 
   // Multiplicadores ETA — cargados desde SharedPreferences (configurados en admin)
   double _etaPeakMultiplier = 2.0;
@@ -3919,6 +3924,32 @@ class _RideScreenState extends State<RideScreen> {
     return earthRadiusKm * c;
   }
 
+  double _readManeuverDistanceMeters() {
+    return double.tryParse(_maneuverDistanceController.text.trim()) ?? 0;
+  }
+
+  bool _validateManeuverSelection() {
+    if (!_maneuverSelected) {
+      return true;
+    }
+    final distanceMeters = _readManeuverDistanceMeters();
+    if (distanceMeters <= 0) {
+      setState(() {
+        _locationStatus =
+            'Indica la distancia en metros para la maniobra (máximo 4 m).';
+      });
+      return false;
+    }
+    if (distanceMeters > 4) {
+      setState(() {
+        _locationStatus =
+            'La maniobra de carga/descarga solo aplica hasta 4 metros del vehículo.';
+      });
+      return false;
+    }
+    return true;
+  }
+
   void _syncDistanceFromMap() {
     if (_pickupPoint == null || _dropoffPoint == null) {
       setState(() {
@@ -4054,6 +4085,13 @@ class _RideScreenState extends State<RideScreen> {
   }
 
   Future<void> _recalculateFareWithConfirmedRoute() async {
+    if (!_validateManeuverSelection()) {
+      return;
+    }
+    _controller.setManeuverOption(
+      selected: _maneuverSelected,
+      distanceMeters: _readManeuverDistanceMeters(),
+    );
     final refreshed = await _refreshRouteData(
       useRoutesApi: true,
       quoteAfterUpdate: true,
@@ -4067,6 +4105,13 @@ class _RideScreenState extends State<RideScreen> {
   }
 
   Future<void> _requestRideWithConfirmedRoute() async {
+    if (!_validateManeuverSelection()) {
+      return;
+    }
+    _controller.setManeuverOption(
+      selected: _maneuverSelected,
+      distanceMeters: _readManeuverDistanceMeters(),
+    );
     if (_rideRequestType == 'scheduled' && _scheduledAt == null) {
       setState(() {
         _locationStatus = 'Para programar, elige dia y hora del viaje.';
@@ -4713,6 +4758,7 @@ class _RideScreenState extends State<RideScreen> {
     _pickupController.dispose();
     _dropoffController.dispose();
     _distanceController.dispose();
+    _maneuverDistanceController.dispose();
     _pageScrollController.dispose();
     _controller.dispose();
     super.dispose();
@@ -5158,6 +5204,63 @@ class _RideScreenState extends State<RideScreen> {
                   ],
                 ),
               ],
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.orange.shade100),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: _maneuverSelected,
+                      title: const Text('Agregar maniobra de carga/descarga'),
+                      subtitle: Text(
+                        _maneuverSelected
+                            ? 'Cargo estimado al cliente: ${_controller.maneuverSurchargePerTripLabel} por viaje. Se pagan MXN 250 al cargador. Solo aplica hasta 4 m del vehículo.'
+                            : 'Se paga MXN 250 al cargador. Si la activas, se sumará el cargo estimado correspondiente. Solo aplica hasta 4 m del vehículo.',
+                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          _maneuverSelected = value;
+                          if (!_maneuverSelected) {
+                            _maneuverDistanceController.text = '0';
+                          }
+                        });
+                        _controller.setManeuverOption(
+                          selected: _maneuverSelected,
+                          distanceMeters: _readManeuverDistanceMeters(),
+                        );
+                        unawaited(_controller.quote());
+                      },
+                    ),
+                    if (_maneuverSelected) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _maneuverDistanceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Distancia de maniobra (metros)',
+                          helperText: 'Debe ser mayor a 0 y menor o igual a 4 m.',
+                          prefixIcon: Icon(Icons.straighten),
+                        ),
+                        onChanged: (_) {
+                          _controller.setManeuverOption(
+                            selected: _maneuverSelected,
+                            distanceMeters: _readManeuverDistanceMeters(),
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -7069,17 +7172,26 @@ class _AdminScreenState extends State<AdminScreen> {
     'defaultUnloadingMinutes': TextEditingController(),
     'loadPersonnelUnitCost': TextEditingController(),
     'unloadPersonnelUnitCost': TextEditingController(),
+    'driverNetDailyTarget': TextEditingController(),
+    'driverWorkHoursPerDay': TextEditingController(),
+    'fuelPricePerLiter': TextEditingController(),
+    'appCommissionRatePct': TextEditingController(),
+    'vatRatePct': TextEditingController(),
+    'fiscalReserveRatePct': TextEditingController(),
+    'maneuverPlatformMarginRate': TextEditingController(),
+    'driverToPickupDistanceRatio': TextEditingController(),
     'municipalities': TextEditingController(),
   };
 
   final Map<String, String> _categoryLabels = {
     'pickup_mini': 'Pick-up Mini',
-    'specialized_1t': 'Especializada 1 tonelada',
+    'specialized_1t': 'Pickup Caja Redilas',
     'truck_3t': 'Especializada 3 toneladas',
     'dump_truck': 'Camion de Volteo',
   };
 
   final Map<String, Map<String, TextEditingController>> _categoryFields = {};
+  Set<String> _marketplaceVisibleCategories = {'specialized_1t'};
   List<RideData> _rides = [];
   List<AdminVehicle> _adminVehicles = [];
   List<AdminDriver> _adminDrivers = [];
@@ -7177,6 +7289,14 @@ class _AdminScreenState extends State<AdminScreen> {
   final TextEditingController _vehiclePhoneController = TextEditingController();
   final TextEditingController _vehicleInsurancePolicyController =
       TextEditingController();
+    final TextEditingController _vehicleCirculationCardPhotoController =
+      TextEditingController();
+    final TextEditingController _vehicleInsurancePhotoController =
+      TextEditingController();
+    final TextEditingController _vehicleAddressProofPhotoController =
+      TextEditingController();
+    final TextEditingController _vehicleVerificationPhotoController =
+      TextEditingController();
   final TextEditingController _vehicleInsuranceExpiryController =
       TextEditingController();
   final TextEditingController _vehicleCirculationExpiryController =
@@ -7224,6 +7344,8 @@ class _AdminScreenState extends State<AdminScreen> {
       TextEditingController();
   final TextEditingController _driverAdjustmentNoteController =
       TextEditingController();
+    final Map<String, TextEditingController> _driverDocumentPhotoControllers =
+      <String, TextEditingController>{};
 
   String _vehicleCategory = 'pickup_mini';
   String _vehicleFilterCategory = 'all';
@@ -7231,6 +7353,7 @@ class _AdminScreenState extends State<AdminScreen> {
   String _vehicleSortBy = 'updated_desc';
   int _vehiclePage = 0;
   bool _vehicleActive = true;
+  bool _vehicleAllowMissingDocuments = false;
   bool _loadingVehicles = false;
   bool _savingVehicle = false;
   String? _editingVehicleId;
@@ -7243,6 +7366,7 @@ class _AdminScreenState extends State<AdminScreen> {
   int _driverPage = 0;
   bool _driverActive = true;
   bool _driverAvailable = false;
+  bool _driverAllowMissingDocuments = false;
   bool _loadingDrivers = false;
   bool _loadingDriverAudit = false;
   bool _savingDriver = false;
@@ -7263,6 +7387,12 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _savingCatalogEntry = false;
   String? _recentlyReorderedCatalogItem;
   String _driverAdjustmentKind = 'credit';
+  static const List<String> _requiredVehicleDocumentKeys = <String>[
+    'tarjeta_circulacion',
+    'poliza_seguro',
+    'comprobante_domicilio',
+    'verificacion',
+  ];
 
   bool _loading = true;
   bool _loadingRides = false;
@@ -7274,6 +7404,7 @@ class _AdminScreenState extends State<AdminScreen> {
   @override
   void initState() {
     super.initState();
+    _syncDriverDocumentPhotoControllers(_driverDocuments.keys.toList());
     _apiClient = ApiClient(
       resolveApiBaseUrl(),
       authContext: ApiAuthContext.admin(
@@ -7440,6 +7571,10 @@ class _AdminScreenState extends State<AdminScreen> {
     _vehicleOperatorController.dispose();
     _vehiclePhoneController.dispose();
     _vehicleInsurancePolicyController.dispose();
+    _vehicleCirculationCardPhotoController.dispose();
+    _vehicleInsurancePhotoController.dispose();
+    _vehicleAddressProofPhotoController.dispose();
+    _vehicleVerificationPhotoController.dispose();
     _vehicleInsuranceExpiryController.dispose();
     _vehicleCirculationExpiryController.dispose();
     _vehicleVerificationExpiryController.dispose();
@@ -7467,6 +7602,9 @@ class _AdminScreenState extends State<AdminScreen> {
     _driverPayoutNoteController.dispose();
     _driverAdjustmentAmountController.dispose();
     _driverAdjustmentNoteController.dispose();
+    for (final controller in _driverDocumentPhotoControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -7495,6 +7633,27 @@ class _AdminScreenState extends State<AdminScreen> {
           config.loadPersonnelUnitCost.toStringAsFixed(2);
       _fields['unloadPersonnelUnitCost']!.text =
           config.unloadPersonnelUnitCost.toStringAsFixed(2);
+        _fields['driverNetDailyTarget']!.text =
+          config.driverNetDailyTarget.toStringAsFixed(2);
+        _fields['driverWorkHoursPerDay']!.text =
+          config.driverWorkHoursPerDay.toStringAsFixed(2);
+        _fields['fuelPricePerLiter']!.text =
+          config.fuelPricePerLiter.toStringAsFixed(2);
+        _fields['appCommissionRatePct']!.text =
+          config.appCommissionRatePct.toStringAsFixed(2);
+        _fields['vatRatePct']!.text = config.vatRatePct.toStringAsFixed(2);
+        _fields['fiscalReserveRatePct']!.text =
+          config.fiscalReserveRatePct.toStringAsFixed(2);
+        _fields['maneuverPlatformMarginRate']!.text =
+          config.maneuverPlatformMarginRate.toStringAsFixed(3);
+        _fields['driverToPickupDistanceRatio']!.text =
+          config.driverToPickupDistanceRatio.toStringAsFixed(3);
+      _marketplaceVisibleCategories = config.marketplaceVisibleCategories
+          .where(_categoryLabels.containsKey)
+          .toSet();
+      if (_marketplaceVisibleCategories.isEmpty) {
+        _marketplaceVisibleCategories = {'specialized_1t'};
+      }
       _fields['municipalities']!.text = config.municipalities.join(', ');
 
       for (final entry in config.categories.entries) {
@@ -7503,13 +7662,46 @@ class _AdminScreenState extends State<AdminScreen> {
             'startFare': TextEditingController(),
             'extraKmRate': TextEditingController(),
             'operationalPerMinRate': TextEditingController(),
+            'fuelEfficiencyKmPerLiter': TextEditingController(),
+            'avgSpeedKmhNoTraffic': TextEditingController(),
+            'maintenancePerKm': TextEditingController(),
+            'depreciationPerKm': TextEditingController(),
+            'insurancePerKm': TextEditingController(),
+            'permitsPerKm': TextEditingController(),
           };
         });
+
+        map.putIfAbsent('startFare', () => TextEditingController());
+        map.putIfAbsent('extraKmRate', () => TextEditingController());
+        map.putIfAbsent(
+            'operationalPerMinRate', () => TextEditingController());
+        map.putIfAbsent(
+            'fuelEfficiencyKmPerLiter', () => TextEditingController());
+        map.putIfAbsent(
+            'avgSpeedKmhNoTraffic', () => TextEditingController());
+        map.putIfAbsent('maintenancePerKm', () => TextEditingController());
+        map.putIfAbsent('depreciationPerKm', () => TextEditingController());
+        map.putIfAbsent('insurancePerKm', () => TextEditingController());
+        map.putIfAbsent('permitsPerKm', () => TextEditingController());
 
         map['startFare']!.text = entry.value.startFare.toStringAsFixed(2);
         map['extraKmRate']!.text = entry.value.extraKmRate.toStringAsFixed(2);
         map['operationalPerMinRate']!.text =
             entry.value.operationalPerMinRate.toStringAsFixed(2);
+        map['fuelEfficiencyKmPerLiter']!.text =
+          entry.value.operatingProfile.fuelEfficiencyKmPerLiter
+            .toStringAsFixed(2);
+        map['avgSpeedKmhNoTraffic']!.text =
+          entry.value.operatingProfile.avgSpeedKmhNoTraffic
+            .toStringAsFixed(2);
+        map['maintenancePerKm']!.text =
+          entry.value.operatingProfile.maintenancePerKm.toStringAsFixed(2);
+        map['depreciationPerKm']!.text =
+          entry.value.operatingProfile.depreciationPerKm.toStringAsFixed(2);
+        map['insurancePerKm']!.text =
+          entry.value.operatingProfile.insurancePerKm.toStringAsFixed(2);
+        map['permitsPerKm']!.text =
+          entry.value.operatingProfile.permitsPerKm.toStringAsFixed(2);
       }
 
       await _loadRides();
@@ -7707,6 +7899,15 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _save() async {
+    if (_marketplaceVisibleCategories.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona al menos una categoria visible.'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _saving = true;
       _error = null;
@@ -7720,6 +7921,16 @@ class _AdminScreenState extends State<AdminScreen> {
         extraKmRate: _categoryNumField(category, 'extraKmRate'),
         operationalPerMinRate:
             _categoryNumField(category, 'operationalPerMinRate'),
+        operatingProfile: AdminCategoryOperatingProfile(
+          fuelEfficiencyKmPerLiter:
+              _categoryNumField(category, 'fuelEfficiencyKmPerLiter'),
+          avgSpeedKmhNoTraffic:
+              _categoryNumField(category, 'avgSpeedKmhNoTraffic'),
+          maintenancePerKm: _categoryNumField(category, 'maintenancePerKm'),
+          depreciationPerKm: _categoryNumField(category, 'depreciationPerKm'),
+          insurancePerKm: _categoryNumField(category, 'insurancePerKm'),
+          permitsPerKm: _categoryNumField(category, 'permitsPerKm'),
+        ),
       );
     }
 
@@ -7739,6 +7950,18 @@ class _AdminScreenState extends State<AdminScreen> {
       defaultUnloadingMinutes: _numField('defaultUnloadingMinutes'),
       loadPersonnelUnitCost: _numField('loadPersonnelUnitCost'),
       unloadPersonnelUnitCost: _numField('unloadPersonnelUnitCost'),
+      driverNetDailyTarget: _numField('driverNetDailyTarget'),
+      driverWorkHoursPerDay: _numField('driverWorkHoursPerDay', fallback: 8),
+      fuelPricePerLiter: _numField('fuelPricePerLiter'),
+      appCommissionRatePct: _numField('appCommissionRatePct'),
+      vatRatePct: _numField('vatRatePct', fallback: 16),
+      fiscalReserveRatePct: _numField('fiscalReserveRatePct'),
+        maneuverPlatformMarginRate:
+          _numField('maneuverPlatformMarginRate', fallback: 0.2),
+        marketplaceVisibleCategories:
+          _marketplaceVisibleCategories.toList(growable: false),
+      driverToPickupDistanceRatio:
+          _numField('driverToPickupDistanceRatio', fallback: 0.35),
       categories: categories,
       municipalities: municipalities,
     );
@@ -9187,6 +9410,27 @@ class _AdminScreenState extends State<AdminScreen> {
       return;
     }
 
+    final vehicleDocumentPhotos = <String, String>{
+      'tarjeta_circulacion':
+          _vehicleCirculationCardPhotoController.text.trim(),
+      'poliza_seguro': _vehicleInsurancePhotoController.text.trim(),
+      'comprobante_domicilio':
+          _vehicleAddressProofPhotoController.text.trim(),
+      'verificacion': _vehicleVerificationPhotoController.text.trim(),
+    };
+    if (!_vehicleAllowMissingDocuments) {
+      final missingDocumentKeys = _requiredVehicleDocumentKeys
+          .where((key) => (vehicleDocumentPhotos[key] ?? '').isEmpty)
+          .toList(growable: false);
+      if (missingDocumentKeys.isNotEmpty) {
+        setState(() {
+          _error =
+              'Debes capturar fotos de documentos del vehiculo: ${missingDocumentKeys.map(_driverDocumentLabel).join(', ')}. O activa excepcion temporal desde admin.';
+        });
+        return;
+      }
+    }
+
     final current = _editingVehicle();
     final nowIso = DateTime.now().toIso8601String();
     final payload = AdminVehicle(
@@ -9212,6 +9456,8 @@ class _AdminScreenState extends State<AdminScreen> {
           _dateFieldValue(_vehicleVerificationExpiryController.text),
       notes: _vehicleNotesController.text.trim(),
       accessories: _selectedVehicleAccessories.toList()..sort(),
+        documentPhotos: vehicleDocumentPhotos,
+        allowMissingDocuments: _vehicleAllowMissingDocuments,
       suspended: current?.suspended ?? false,
       suspensionReason: current?.suspensionReason ?? '',
       active: _vehicleActive,
@@ -9275,12 +9521,17 @@ class _AdminScreenState extends State<AdminScreen> {
       _vehicleOperatorController.clear();
       _vehiclePhoneController.clear();
       _vehicleInsurancePolicyController.clear();
+      _vehicleCirculationCardPhotoController.clear();
+      _vehicleInsurancePhotoController.clear();
+      _vehicleAddressProofPhotoController.clear();
+      _vehicleVerificationPhotoController.clear();
       _vehicleInsuranceExpiryController.clear();
       _vehicleCirculationExpiryController.clear();
       _vehicleVerificationExpiryController.clear();
       _vehicleNotesController.clear();
       _vehicleCategory = 'pickup_mini';
       _vehicleActive = true;
+      _vehicleAllowMissingDocuments = false;
       _selectedVehicleAccessories = <String>{};
     });
   }
@@ -9301,6 +9552,14 @@ class _AdminScreenState extends State<AdminScreen> {
       _vehicleOperatorController.text = vehicle.operatorName;
       _vehiclePhoneController.text = vehicle.contactPhone;
       _vehicleInsurancePolicyController.text = vehicle.insurancePolicy;
+        _vehicleCirculationCardPhotoController.text =
+          vehicle.documentPhotos['tarjeta_circulacion'] ?? '';
+        _vehicleInsurancePhotoController.text =
+          vehicle.documentPhotos['poliza_seguro'] ?? '';
+        _vehicleAddressProofPhotoController.text =
+          vehicle.documentPhotos['comprobante_domicilio'] ?? '';
+        _vehicleVerificationPhotoController.text =
+          vehicle.documentPhotos['verificacion'] ?? '';
       _vehicleInsuranceExpiryController.text = vehicle.insuranceExpiry ?? '';
       _vehicleCirculationExpiryController.text =
           vehicle.circulationCardExpiry ?? '';
@@ -9309,6 +9568,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _vehicleNotesController.text = vehicle.notes;
       _vehicleCategory = vehicle.category;
       _vehicleActive = vehicle.active;
+      _vehicleAllowMissingDocuments = vehicle.allowMissingDocuments;
       _selectedVehicleAccessories = vehicle.accessories.toSet();
     });
   }
@@ -9494,6 +9754,38 @@ class _AdminScreenState extends State<AdminScreen> {
     return result;
   }
 
+  bool _vehicleHasMissingDocuments(AdminVehicle vehicle) {
+    if (vehicle.allowMissingDocuments) {
+      return false;
+    }
+    for (final key in _requiredVehicleDocumentKeys) {
+      final value = vehicle.documentPhotos[key]?.trim() ?? '';
+      if (value.isEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _driverHasMissingDocuments(AdminDriver driver) {
+    if (driver.allowMissingDocuments) {
+      return false;
+    }
+    if (driver.documents.isEmpty) {
+      return true;
+    }
+    for (final entry in driver.documents.entries) {
+      if (entry.value != true) {
+        return true;
+      }
+      final photo = driver.documentPhotos[entry.key]?.trim() ?? '';
+      if (photo.isEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Widget _buildVehiclesSection() {
     final categories = _categoryLabels.keys.toList();
     const pageSize = 8;
@@ -9616,6 +9908,42 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
+                  'Fotos de documentos del vehiculo (obligatorias)',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _vehicleTextField(
+                      _vehicleCirculationCardPhotoController,
+                      'Foto tarjeta de circulacion *',
+                      hint: 'URL o referencia',
+                      width: 360,
+                    ),
+                    _vehicleTextField(
+                      _vehicleInsurancePhotoController,
+                      'Foto poliza de seguro *',
+                      hint: 'URL o referencia',
+                      width: 360,
+                    ),
+                    _vehicleTextField(
+                      _vehicleAddressProofPhotoController,
+                      'Foto comprobante domicilio *',
+                      hint: 'URL o referencia',
+                      width: 360,
+                    ),
+                    _vehicleTextField(
+                      _vehicleVerificationPhotoController,
+                      'Foto verificacion *',
+                      hint: 'URL o referencia',
+                      width: 360,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
                   'Accesorios para transporte de carga',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
@@ -9648,6 +9976,21 @@ class _AdminScreenState extends State<AdminScreen> {
                   onChanged: (value) {
                     setState(() {
                       _vehicleActive = value ?? true;
+                    });
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _vehicleAllowMissingDocuments,
+                  title: const Text(
+                    'Autorizar con documentos faltantes (solo admin)',
+                  ),
+                  subtitle: const Text(
+                    'ON permite guardar temporalmente sin evidencias completas.',
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _vehicleAllowMissingDocuments = value;
                     });
                   },
                 ),
@@ -9897,6 +10240,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   ...pageVehicles.map((vehicle) {
                     final categoryLabel =
                         _categoryLabels[vehicle.category] ?? vehicle.category;
+                    final vehicleMissingDocs = _vehicleHasMissingDocuments(vehicle);
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Container(
@@ -9948,6 +10292,25 @@ class _AdminScreenState extends State<AdminScreen> {
                                   onPressed: () => _deleteVehicle(vehicle),
                                   icon: const Icon(Icons.delete_outline),
                                 ),
+                              ],
+                            ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                StatusBadge(
+                                  label: vehicleMissingDocs
+                                      ? 'Docs incompletos'
+                                      : 'Docs completos',
+                                  status: vehicleMissingDocs
+                                      ? 'pending'
+                                      : 'active',
+                                ),
+                                if (vehicle.allowMissingDocuments)
+                                  const StatusBadge(
+                                    label: 'Excepcion admin ON',
+                                    status: 'pending',
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 4),
@@ -10050,6 +10413,7 @@ class _AdminScreenState extends State<AdminScreen> {
     for (final key in documentKeys) {
       nextDocuments[key] = _driverDocuments[key] ?? false;
     }
+    _syncDriverDocumentPhotoControllers(documentKeys);
 
     _adminCatalogItems = {
       'vehicle_accessories': accessories,
@@ -10060,6 +10424,26 @@ class _AdminScreenState extends State<AdminScreen> {
         accessories.isEmpty ? _fallbackVehicleAccessories() : accessories;
     _driverSkillsCatalog = skills.isEmpty ? _fallbackDriverSkills() : skills;
     _driverDocuments = nextDocuments;
+  }
+
+  TextEditingController _driverDocumentPhotoController(String key) {
+    return _driverDocumentPhotoControllers.putIfAbsent(
+      key,
+      () => TextEditingController(),
+    );
+  }
+
+  void _syncDriverDocumentPhotoControllers(Iterable<String> keys) {
+    final nextKeys = keys.toSet();
+    final obsolete = _driverDocumentPhotoControllers.keys
+        .where((key) => !nextKeys.contains(key))
+        .toList(growable: false);
+    for (final key in obsolete) {
+      _driverDocumentPhotoControllers.remove(key)?.dispose();
+    }
+    for (final key in nextKeys) {
+      _driverDocumentPhotoController(key);
+    }
   }
 
   Future<void> _loadAdminCatalogs() async {
@@ -10381,12 +10765,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   int _driversMissingDocumentsCount() {
-    return _adminDrivers.where((driver) {
-      if (driver.documents.isEmpty) {
-        return true;
-      }
-      return driver.documents.values.any((ok) => ok != true);
-    }).length;
+    return _adminDrivers.where(_driverHasMissingDocuments).length;
   }
 
   int _driversWithoutVehicleCount() {
@@ -10884,18 +11263,18 @@ class _AdminScreenState extends State<AdminScreen> {
       _driverCategory = 'pickup_mini';
       _driverActive = true;
       _driverAvailable = false;
+      _driverAllowMissingDocuments = false;
       _selectedDriverVehicleIds = <String>{};
       _selectedDriverSkills = <String>{};
+      final docKeys =
+          _adminCatalogItems['driver_documents'] ?? _driverDocuments.keys.toList();
       _driverDocuments = {
-        'ine': false,
-        'licencia_vigente': false,
-        'comprobante_domicilio': false,
-        'carta_antecedentes': false,
-        'contrato_firmado': false,
-        'capacitacion_aprobada': false,
-        'seguro_vigente': false,
-        'examen_medico': false,
+        for (final key in docKeys) key: false,
       };
+      _syncDriverDocumentPhotoControllers(_driverDocuments.keys.toList());
+      for (final key in _driverDocuments.keys) {
+        _driverDocumentPhotoController(key).clear();
+      }
     });
   }
 
@@ -10921,20 +11300,19 @@ class _AdminScreenState extends State<AdminScreen> {
       _driverCategory = driver.category;
       _driverActive = driver.active;
       _driverAvailable = driver.available;
+      _driverAllowMissingDocuments = driver.allowMissingDocuments;
       _selectedDriverVehicleIds = driver.assignedVehicleIds.toSet();
       _selectedDriverSkills = driver.cargoSkills.toSet();
+      final docKeys =
+          _adminCatalogItems['driver_documents'] ?? driver.documents.keys.toList();
       _driverDocuments = {
-        'ine': driver.documents['ine'] == true,
-        'licencia_vigente': driver.documents['licencia_vigente'] == true,
-        'comprobante_domicilio':
-            driver.documents['comprobante_domicilio'] == true,
-        'carta_antecedentes': driver.documents['carta_antecedentes'] == true,
-        'contrato_firmado': driver.documents['contrato_firmado'] == true,
-        'capacitacion_aprobada':
-            driver.documents['capacitacion_aprobada'] == true,
-        'seguro_vigente': driver.documents['seguro_vigente'] == true,
-        'examen_medico': driver.documents['examen_medico'] == true,
+        for (final key in docKeys) key: driver.documents[key] == true,
       };
+      _syncDriverDocumentPhotoControllers(_driverDocuments.keys.toList());
+      for (final key in _driverDocuments.keys) {
+        _driverDocumentPhotoController(key).text =
+            driver.documentPhotos[key]?.trim() ?? '';
+      }
     });
   }
 
@@ -10952,6 +11330,36 @@ class _AdminScreenState extends State<AdminScreen> {
             'Completa nombre, apellido, telefono y licencia para registrar chofer.';
       });
       return;
+    }
+
+    final driverDocumentPhotos = <String, String>{
+      for (final key in _driverDocuments.keys)
+        key: _driverDocumentPhotoController(key).text.trim(),
+    };
+    if (!_driverAllowMissingDocuments) {
+      final missingChecks = _driverDocuments.entries
+          .where((entry) => entry.value != true)
+          .map((entry) => _driverDocumentLabel(entry.key))
+          .toList(growable: false);
+      final missingPhotos = driverDocumentPhotos.entries
+          .where((entry) => entry.value.isEmpty)
+          .map((entry) => _driverDocumentLabel(entry.key))
+          .toList(growable: false);
+      if (missingChecks.isNotEmpty || missingPhotos.isNotEmpty) {
+        final details = <String>[];
+        if (missingChecks.isNotEmpty) {
+          details.add('marca los documentos: ${missingChecks.join(', ')}');
+        }
+        if (missingPhotos.isNotEmpty) {
+          details.add(
+              'agrega fotos de documentos: ${missingPhotos.join(', ')}');
+        }
+        setState(() {
+          _error =
+              'Documentacion de chofer incompleta, ${details.join(' | ')}. O activa excepcion temporal desde admin.';
+        });
+        return;
+      }
     }
 
     final current = _editingDriver();
@@ -10988,6 +11396,8 @@ class _AdminScreenState extends State<AdminScreen> {
       assignedVehicleIds: selectedIds,
       cargoSkills: _selectedDriverSkills.toList()..sort(),
       documents: Map<String, bool>.from(_driverDocuments),
+      documentPhotos: driverDocumentPhotos,
+      allowMissingDocuments: _driverAllowMissingDocuments,
       rating: current?.rating ?? '0.00',
       ratingCount: current?.ratingCount ?? 0,
       createdAt: current?.createdAt ?? nowIso,
@@ -11383,20 +11793,50 @@ class _AdminScreenState extends State<AdminScreen> {
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                Column(
                   children: _driverDocuments.entries.map((entry) {
-                    return FilterChip(
-                      label: Text(_driverDocumentLabel(entry.key)),
-                      selected: entry.value,
-                      onSelected: (selected) {
-                        setState(() {
-                          _driverDocuments[entry.key] = selected;
-                        });
-                      },
+                    final key = entry.key;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          FilterChip(
+                            label: Text(_driverDocumentLabel(key)),
+                            selected: entry.value,
+                            onSelected: (selected) {
+                              setState(() {
+                                _driverDocuments[key] = selected;
+                              });
+                            },
+                          ),
+                          _vehicleTextField(
+                            _driverDocumentPhotoController(key),
+                            'Foto ${_driverDocumentLabel(key)} *',
+                            hint: 'URL o referencia',
+                            width: 390,
+                          ),
+                        ],
+                      ),
                     );
-                  }).toList(),
+                  }).toList(growable: false),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _driverAllowMissingDocuments,
+                  title: const Text(
+                    'Autorizar chofer con documentos faltantes (solo admin)',
+                  ),
+                  subtitle: const Text(
+                    'ON permite registrar temporalmente sin expediente completo.',
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _driverAllowMissingDocuments = value;
+                    });
+                  },
                 ),
                 const SizedBox(height: 12),
                 const Text(
@@ -11783,6 +12223,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     final driver = entry.value;
                     final categoryLabel =
                         _categoryLabels[driver.category] ?? driver.category;
+                    final driverMissingDocs = _driverHasMissingDocuments(driver);
                     return StaggeredAnimationItem(
                       index: index,
                       child: Padding(
@@ -11862,6 +12303,25 @@ class _AdminScreenState extends State<AdminScreen> {
                                       onPressed: () => _deleteDriver(driver),
                                       icon: const Icon(Icons.delete_outline),
                                     ),
+                                  ],
+                                ),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  children: [
+                                    StatusBadge(
+                                      label: driverMissingDocs
+                                          ? 'Docs incompletos'
+                                          : 'Docs completos',
+                                      status: driverMissingDocs
+                                          ? 'pending'
+                                          : 'active',
+                                    ),
+                                    if (driver.allowMissingDocuments)
+                                      const StatusBadge(
+                                        label: 'Excepcion admin ON',
+                                        status: 'pending',
+                                      ),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
@@ -13078,6 +13538,55 @@ class _AdminScreenState extends State<AdminScreen> {
                 'loadPersonnelUnitCost', 'Costo unitario personal carga'),
             _numberField(
                 'unloadPersonnelUnitCost', 'Costo unitario personal descarga'),
+            _numberField('driverNetDailyTarget', 'Meta neta chofer por dia (MXN)'),
+            _numberField(
+              'driverWorkHoursPerDay', 'Horas de trabajo por dia (chofer)'),
+            _numberField('fuelPricePerLiter', 'Precio gasolina por litro (MXN)'),
+            _numberField(
+              'appCommissionRatePct', 'Comision plataforma tipo app (%)'),
+            _numberField('vatRatePct', 'IVA aplicado al cliente (%)'),
+            _numberField('fiscalReserveRatePct', 'Reserva fiscal adicional (%)'),
+            _numberField('maneuverPlatformMarginRate',
+              'Margen maniobra carga/descarga (decimal; 0.20 = 20%)'),
+            const SizedBox(height: 8),
+            const Text(
+              'Categorias visibles en marketplace',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _categoryLabels.entries.map((entry) {
+                final isSelected =
+                    _marketplaceVisibleCategories.contains(entry.key);
+                return FilterChip(
+                  label: Text(entry.value),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _marketplaceVisibleCategories.add(entry.key);
+                      } else {
+                        if (_marketplaceVisibleCategories.length > 1) {
+                          _marketplaceVisibleCategories.remove(entry.key);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Debe quedar al menos una categoria visible.',
+                              ),
+                            ),
+                          );
+                        }
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            _numberField('driverToPickupDistanceRatio',
+              'Proporcion estimada A-B vs B-C (sin dato real)'),
             TextField(
               controller: _fields['municipalities'],
               decoration: const InputDecoration(
@@ -13255,6 +13764,59 @@ class _AdminScreenState extends State<AdminScreen> {
                   labelText: 'Tarifa por minuto operacional',
                   prefixIcon: Icon(Icons.schedule)),
             ),
+            const SizedBox(height: 10),
+            const Text(
+              'Rendimiento y costos operativos (editable)',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            TextField(
+              controller: controls['fuelEfficiencyKmPerLiter'],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Rendimiento combustible (km/l)',
+                  prefixIcon: Icon(Icons.local_gas_station_outlined)),
+            ),
+            TextField(
+              controller: controls['avgSpeedKmhNoTraffic'],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Velocidad promedio sin trafico (km/h)',
+                  prefixIcon: Icon(Icons.speed_outlined)),
+            ),
+            TextField(
+              controller: controls['maintenancePerKm'],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Mantenimiento por km (MXN)',
+                  prefixIcon: Icon(Icons.build_outlined)),
+            ),
+            TextField(
+              controller: controls['depreciationPerKm'],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Depreciacion por km (MXN)',
+                  prefixIcon: Icon(Icons.trending_down_outlined)),
+            ),
+            TextField(
+              controller: controls['insurancePerKm'],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Seguro por km (MXN)',
+                  prefixIcon: Icon(Icons.verified_user_outlined)),
+            ),
+            TextField(
+              controller: controls['permitsPerKm'],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Permisos/cuotas por km (MXN)',
+                  prefixIcon: Icon(Icons.receipt_long_outlined)),
+            ),
           ],
         ),
       ),
@@ -13310,6 +13872,7 @@ class _DriverScreenState extends State<DriverScreen> {
   DriverAccountStatement? _accountStatement;
   Map<String, List<String>> _incidentCatalog = const {};
   String? _selectedDriverId;
+  DriverDetail? _selectedDriverSnapshot;
   late final TextEditingController _customWindowController;
   bool _activeOnly = true;
   bool _loading = true;
@@ -13319,6 +13882,7 @@ class _DriverScreenState extends State<DriverScreen> {
   String? _busyRideActionId;
   String? _error;
   final Set<String> _alertedRideIds = <String>{};
+  int _tabIndex = 0;
   int _scheduledWindowHours = _defaultScheduledWindowHours;
   int _statementWindowDays = 30;
   String? _cachedAutoPushToken;
@@ -13358,14 +13922,31 @@ class _DriverScreenState extends State<DriverScreen> {
       return;
     }
 
-    if (!result.allGranted) {
+    if (_hasBlockingDriverPermissions(result)) {
       setState(() {
         _error =
             'Para operar como chofer habilita permisos de ubicacion, camara, microfono, telefono, almacenamiento y notificaciones.';
       });
+    } else if ((_error ?? '').startsWith('Para operar como chofer')) {
+      setState(() {
+        _error = null;
+      });
     }
 
     await AppPermissions.promptOpenSettingsIfNeeded(context, result);
+  }
+
+  bool _hasBlockingDriverPermissions(AppPermissionsResult result) {
+    bool isCriticalPermission(Object permission) {
+      final name = permission.toString();
+      return name.contains('locationWhenInUse') ||
+          name.contains('camera') ||
+          name.contains('microphone') ||
+          name.contains('notification');
+    }
+
+    return result.denied.any(isCriticalPermission) ||
+        result.permanentlyDenied.any(isCriticalPermission);
   }
 
   @override
@@ -13543,6 +14124,15 @@ class _DriverScreenState extends State<DriverScreen> {
     }
   }
 
+  Future<String> _loadStoredDriverSessionId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return (prefs.getString(_driverSessionIdPrefsKey) ?? '').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> _restoreScheduledWindowPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -13603,13 +14193,16 @@ class _DriverScreenState extends State<DriverScreen> {
       await _loadRides();
       await _loadRatings();
       await _loadAccountStatement();
-      if ((_selectedDriverId ?? '').isEmpty && _drivers.isNotEmpty && mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || (_selectedDriverId ?? '').isNotEmpty) {
-            return;
-          }
-          unawaited(_showDriverProfileSelector(forceSelection: true));
-        });
+      if ((_selectedDriverId ?? '').isEmpty && mounted) {
+        final recentIds = await _loadRecentDriverProfiles();
+        if (recentIds.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || (_selectedDriverId ?? '').isNotEmpty) {
+              return;
+            }
+            unawaited(_showDriverProfileSelector(forceSelection: true));
+          });
+        }
       }
     } catch (e) {
       _error = 'No se pudo cargar modulo chofer: $e';
@@ -13635,14 +14228,28 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 
-  Future<void> _selectDriverProfile(String? driverId) async {
+  Future<void> _selectDriverProfile(
+    String? driverId, {
+    DriverDetail? profileSnapshot,
+  }) async {
     final normalizedId = (driverId ?? '').trim();
     if (normalizedId.isEmpty || !mounted) {
       return;
     }
 
+    DriverDetail? snapshot = profileSnapshot;
+    if (snapshot == null) {
+      for (final driver in _drivers) {
+        if (driver.id == normalizedId) {
+          snapshot = driver;
+          break;
+        }
+      }
+    }
+
     setState(() {
       _selectedDriverId = normalizedId;
+      _selectedDriverSnapshot = snapshot ?? _selectedDriverSnapshot;
       _alertedRideIds.clear();
       _error = null;
     });
@@ -13656,18 +14263,32 @@ class _DriverScreenState extends State<DriverScreen> {
     await _loadAccountStatement();
   }
 
+  DriverDetail _driverDetailFromAdminProfile(AdminDriver profile) {
+    final categoryLabel = switch (profile.category) {
+      'pickup_mini' => 'Mini',
+      'specialized_1t' => '1T',
+      'truck_3t' => '3T',
+      'dump_truck' => 'Volteo',
+      _ => profile.category,
+    };
+
+    return DriverDetail(
+      id: profile.id,
+      name: profile.fullName.isNotEmpty ? profile.fullName : 'Chofer',
+      category: profile.category,
+      capacity: categoryLabel,
+      available: profile.available,
+      rating: profile.rating,
+      ratingCount: profile.ratingCount,
+      completedRides: 0,
+      vehicleName: categoryLabel,
+    );
+  }
+
   Future<void> _showDriverProfileSelector({
     bool forceSelection = false,
   }) async {
     if (!mounted) {
-      return;
-    }
-
-    if (_drivers.isEmpty) {
-      setState(() {
-        _error =
-            'No hay perfiles de chofer disponibles. Actualiza el modulo o registra uno desde Admin.';
-      });
       return;
     }
 
@@ -13686,12 +14307,21 @@ class _DriverScreenState extends State<DriverScreen> {
         recentDrivers.add(match);
       }
     }
-    final prioritizedDrivers = <DriverDetail>[...recentDrivers];
-    for (final driver in _drivers) {
-      if (recentDrivers.any((item) => item.id == driver.id)) {
-        continue;
-      }
-      prioritizedDrivers.add(driver);
+
+    final localDrivers = <DriverDetail>[...recentDrivers];
+    final storedDriverSessionId = await _loadStoredDriverSessionId();
+    final currentDriverId = (_selectedDriverId ?? '').trim().isNotEmpty
+        ? (_selectedDriverId ?? '').trim()
+        : storedDriverSessionId;
+    final currentDriver = currentDriverId.isEmpty ? null : driverById[currentDriverId];
+    if (currentDriver != null &&
+        localDrivers.every((driver) => driver.id != currentDriver.id)) {
+      localDrivers.insert(0, currentDriver);
+    }
+
+    if (localDrivers.isEmpty) {
+      await _showDriverSecureLinkSheet(forceSelection: forceSelection);
+      return;
     }
 
     final selectedId = await showModalBottomSheet<String>(
@@ -13727,121 +14357,21 @@ class _DriverScreenState extends State<DriverScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (recentDrivers.isNotEmpty) ...[
-                    const Text(
-                      'Recientes',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: recentDrivers.map((driver) {
-                        final statusColor = driver.available
-                            ? const Color(0xFF059669)
-                            : const Color(0xFFB45309);
-                        final statusLabel =
-                            driver.available ? 'Disponible' : 'Fuera';
-                        final categoryIcon = switch (driver.category) {
-                          'pickup_mini' => Icons.directions_car_filled_rounded,
-                          'specialized_1t' => Icons.local_shipping_rounded,
-                          'truck_3t' => Icons.airport_shuttle_rounded,
-                          'dump_truck' => Icons.construction_rounded,
-                          _ => Icons.local_shipping_outlined,
-                        };
-                        final categoryShort = switch (driver.category) {
-                          'pickup_mini' => 'Mini',
-                          'specialized_1t' => '1T',
-                          'truck_3t' => '3T',
-                          'dump_truck' => 'Volteo',
-                          _ => driver.category.toUpperCase(),
-                        };
-
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(999),
-                          onTap: () => Navigator.of(context).pop(driver.id),
-                          child: Ink(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                  color: statusColor.withValues(alpha: 0.35)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.75),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Icon(
-                                    categoryIcon,
-                                    size: 13,
-                                    color: statusColor,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: statusColor,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  driver.name,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700),
-                                ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.75),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    categoryShort,
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF1E293B),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  statusLabel,
-                                  style: TextStyle(
-                                    color: statusColor,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(growable: false),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
+                  const Text(
+                    'Mis perfiles en este dispositivo',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        color: Color(0xFF475569)),
+                  ),
+                  const SizedBox(height: 8),
                   Flexible(
                     child: ListView.separated(
                       shrinkWrap: true,
-                      itemCount: prioritizedDrivers.length,
+                      itemCount: localDrivers.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
-                        final driver = prioritizedDrivers[index];
+                        final driver = localDrivers[index];
                         final selected = driver.id == _selectedDriverId;
                         return InkWell(
                           borderRadius: BorderRadius.circular(18),
@@ -13961,7 +14491,44 @@ class _DriverScreenState extends State<DriverScreen> {
     );
 
     if (selectedId != null && selectedId.trim().isNotEmpty) {
-      await _selectDriverProfile(selectedId);
+      final selectedDriver = localDrivers.firstWhere(
+        (driver) => driver.id == selectedId.trim(),
+        orElse: () => localDrivers.first,
+      );
+
+      if (selectedDriver.id != (_selectedDriverId ?? '').trim()) {
+        final pin = await _showDriverPinPrompt(
+          title: 'Confirma tu PIN',
+          subtitle: 'Ingresa tu PIN de 4 digitos para abrir ${selectedDriver.name}.',
+        );
+        if (pin == null) {
+          return;
+        }
+
+        try {
+          final unlocked = await _apiClient.unlockDriverProfile(
+            driverId: selectedDriver.id,
+            pin: pin,
+          );
+          await _selectDriverProfile(
+            selectedId,
+            profileSnapshot: unlocked,
+          );
+          return;
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              _error = 'No se pudo abrir perfil: $e';
+            });
+          }
+          return;
+        }
+      }
+
+      await _selectDriverProfile(
+        selectedId,
+        profileSnapshot: selectedDriver,
+      );
       return;
     }
 
@@ -13971,6 +14538,255 @@ class _DriverScreenState extends State<DriverScreen> {
             'Necesitas elegir un perfil para operar como chofer en este dispositivo.';
       });
     }
+  }
+
+  Future<String?> _showDriverPinPrompt({
+    required String title,
+    required String subtitle,
+  }) async {
+    final pinCtrl = TextEditingController();
+    String? localError;
+
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: Text(title),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(subtitle),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: pinCtrl,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    maxLength: 4,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(4),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: 'PIN de 4 digitos',
+                      errorText: localError,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final pinValue = pinCtrl.text.trim();
+                    if (!RegExp(r'^\d{4}$').hasMatch(pinValue)) {
+                      setDialogState(() {
+                        localError = 'El PIN debe tener exactamente 4 digitos.';
+                      });
+                      return;
+                    }
+                    Navigator.of(ctx).pop(pinValue);
+                  },
+                  child: const Text('Continuar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    pinCtrl.dispose();
+    return pin;
+  }
+
+  Future<void> _showDriverSecureLinkSheet({
+    bool forceSelection = false,
+  }) async {
+    final phoneCtrl = TextEditingController();
+    final licenseCtrl = TextEditingController();
+    final pinCtrl = TextEditingController();
+    bool loading = false;
+    String? formError;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FBFF),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+              ),
+              padding: EdgeInsets.fromLTRB(
+                  20, 10, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.link_rounded,
+                            color: Color(0xFF0F766E), size: 28),
+                        SizedBox(width: 10),
+                        Text('Vincular perfil existente',
+                            style: TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      forceSelection
+                          ? 'Confirma tus datos para abrir tu sesion de chofer.'
+                          : 'Ingresa telefono, licencia y PIN para abrir tu perfil en este dispositivo.',
+                      style: TextStyle(color: Colors.blueGrey.shade700),
+                    ),
+                    const SizedBox(height: 14),
+                    if (formError != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Text(formError!,
+                            style: const TextStyle(color: Color(0xFFB91C1C))),
+                      ),
+                    TextField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: const InputDecoration(
+                        labelText: 'Telefono (10 digitos)',
+                        prefixText: '+52 ',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: licenseCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'No. Licencia',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: pinCtrl,
+                      keyboardType: TextInputType.number,
+                      obscureText: true,
+                      maxLength: 4,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(4),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'PIN de 4 digitos',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: loading
+                            ? null
+                            : () async {
+                                final phone = phoneCtrl.text.replaceAll(RegExp(r'\D'), '').trim();
+                                final license = licenseCtrl.text.trim().toUpperCase();
+                                final pin = pinCtrl.text.trim();
+
+                                if (phone.length < 10 || license.isEmpty || !RegExp(r'^\d{4}$').hasMatch(pin)) {
+                                  setSheetState(() {
+                                    formError = 'Captura telefono, licencia y PIN valido de 4 digitos.';
+                                  });
+                                  return;
+                                }
+
+                                setSheetState(() {
+                                  loading = true;
+                                  formError = null;
+                                });
+
+                                try {
+                                  final linked = await _apiClient.linkDriverProfile(
+                                    phone: phone,
+                                    licenseNumber: license,
+                                    pin: pin,
+                                  );
+                                  if (ctx.mounted) {
+                                    Navigator.of(ctx).pop();
+                                  }
+                                  if (mounted) {
+                                    await _refreshAll();
+                                    await _selectDriverProfile(
+                                      linked.id,
+                                      profileSnapshot: linked,
+                                    );
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Sesion iniciada: ${linked.name}'),
+                                        backgroundColor: const Color(0xFF059669),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  setSheetState(() {
+                                    loading = false;
+                                    formError = 'No se pudo vincular el perfil: $e';
+                                  });
+                                }
+                              },
+                        icon: loading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.lock_open_rounded),
+                        label: Text(loading ? 'Validando...' : 'Abrir mi perfil'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    phoneCtrl.dispose();
+    licenseCtrl.dispose();
+    pinCtrl.dispose();
   }
 
   Future<void> _logoutDriverSession() async {
@@ -14019,6 +14835,7 @@ class _DriverScreenState extends State<DriverScreen> {
 
       setState(() {
         _selectedDriverId = null;
+        _selectedDriverSnapshot = null;
         _rides = const [];
         _ratings = const [];
         _accountStatement = null;
@@ -14841,11 +15658,1364 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   @override
+  // ─── Registro de nuevo chofer ───────────────────────────────────────────
+  Future<void> _showRegisterDriverSheet() async {
+    final firstNameCtrl = TextEditingController();
+    final lastNameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final licenseCtrl = TextEditingController();
+    final pinCtrl = TextEditingController();
+    String selectedCategory = 'pickup_mini';
+    bool loading = false;
+    String? formError;
+
+    const categoryOptions = [
+      ('pickup_mini', 'Pick-up Mini (hasta 800 kg)'),
+      ('specialized_1t', 'Pickup Caja Redilas'),
+      ('truck_3t', 'Especializada 3 toneladas'),
+      ('dump_truck', 'Camion volteo'),
+    ];
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FBFF),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+              ),
+              padding: EdgeInsets.fromLTRB(
+                  20, 10, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.local_shipping_rounded,
+                            color: Color(0xFF059669), size: 28),
+                        SizedBox(width: 10),
+                        Text('Registrarme como chofer',
+                            style: TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Ingresa tus datos para crear tu perfil en Karryt.',
+                        style: TextStyle(color: Colors.blueGrey.shade600)),
+                    const SizedBox(height: 16),
+                    if (formError != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                        ),
+                        child: Text(formError!,
+                            style: const TextStyle(color: Color(0xFFB91C1C))),
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: firstNameCtrl,
+                            decoration: const InputDecoration(
+                                labelText: 'Nombre *',
+                                border: OutlineInputBorder(),
+                                isDense: true),
+                            textCapitalization: TextCapitalization.words,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: lastNameCtrl,
+                            decoration: const InputDecoration(
+                                labelText: 'Apellido(s) *',
+                                border: OutlineInputBorder(),
+                                isDense: true),
+                            textCapitalization: TextCapitalization.words,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: phoneCtrl,
+                      decoration: const InputDecoration(
+                          labelText: 'Telefono * (10 digitos)',
+                          border: OutlineInputBorder(),
+                          prefixText: '+52 ',
+                          isDense: true),
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: emailCtrl,
+                      decoration: const InputDecoration(
+                          labelText: 'Email (opcional)',
+                          border: OutlineInputBorder(),
+                          isDense: true),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: licenseCtrl,
+                      decoration: const InputDecoration(
+                          labelText: 'No. Licencia de conducir *',
+                          border: OutlineInputBorder(),
+                          isDense: true),
+                      textCapitalization: TextCapitalization.characters,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: pinCtrl,
+                      keyboardType: TextInputType.number,
+                      obscureText: true,
+                      maxLength: 4,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(4),
+                      ],
+                      decoration: const InputDecoration(
+                          labelText: 'PIN de acceso * (4 digitos)',
+                          border: OutlineInputBorder(),
+                          isDense: true),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedCategory,
+                      decoration: const InputDecoration(
+                          labelText: 'Categoria de vehiculo *',
+                          border: OutlineInputBorder(),
+                          isDense: true),
+                      items: categoryOptions
+                          .map((opt) => DropdownMenuItem(
+                              value: opt.$1, child: Text(opt.$2)))
+                          .toList(),
+                      onChanged: (val) =>
+                          setSheetState(() => selectedCategory = val!),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: loading
+                            ? null
+                            : () async {
+                                final fn = firstNameCtrl.text.trim();
+                                final ln = lastNameCtrl.text.trim();
+                                final ph = phoneCtrl.text
+                                    .replaceAll(RegExp(r'\D'), '');
+                                final lic = licenseCtrl.text.trim();
+                                final pin = pinCtrl.text.trim();
+                                if (fn.isEmpty ||
+                                    ln.isEmpty ||
+                                    ph.isEmpty ||
+                                    lic.isEmpty ||
+                                    pin.isEmpty) {
+                                  setSheetState(() => formError =
+                                      'Nombre, apellido, telefono, licencia y PIN son obligatorios.');
+                                  return;
+                                }
+                                if (ph.length < 10) {
+                                  setSheetState(() => formError =
+                                      'El telefono debe tener al menos 10 digitos.');
+                                  return;
+                                }
+                                if (!RegExp(r'^\d{4}$').hasMatch(pin)) {
+                                  setSheetState(() => formError =
+                                      'El PIN debe tener exactamente 4 digitos.');
+                                  return;
+                                }
+                                setSheetState(
+                                    () => loading = true, );
+                                try {
+                                  final newDriver = AdminDriver(
+                                    id: '',
+                                    firstName: fn,
+                                    lastName: ln,
+                                    phone: ph,
+                                    email: emailCtrl.text.trim().toLowerCase(),
+                                    curp: '',
+                                    rfc: '',
+                                    birthDate: null,
+                                    address: '',
+                                    municipality: '',
+                                    emergencyContactName: '',
+                                    emergencyContactPhone: '',
+                                    licenseNumber: lic,
+                                    licenseType: '',
+                                    licenseExpiry: null,
+                                    bloodType: '',
+                                    category: selectedCategory,
+                                    available: true,
+                                    suspended: false,
+                                    suspensionReason: '',
+                                    active: true,
+                                    notes: '',
+                                    assignedVehicleIds: const [],
+                                    cargoSkills: const [],
+                                    documents: const {},
+                                    documentPhotos: const {},
+                                    allowMissingDocuments: true,
+                                    rating: '0.00',
+                                    ratingCount: 0,
+                                    createdAt: '',
+                                    updatedAt: '',
+                                    driverPin: pin,
+                                  );
+                                  final created = await _apiClient
+                                      .createAdminDriver(newDriver);
+                                  if (ctx.mounted) {
+                                    Navigator.of(ctx).pop();
+                                  }
+                                  if (mounted) {
+                                    await _refreshAll();
+                                    await _selectDriverProfile(
+                                      created.id,
+                                      profileSnapshot:
+                                          _driverDetailFromAdminProfile(created),
+                                    );
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                            'Perfil creado: ${created.fullName}. ¡Bienvenido a Karryt!'),
+                                        backgroundColor:
+                                            const Color(0xFF059669),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  setSheetState(() {
+                                    loading = false;
+                                    formError = 'Error al registrarse: $e';
+                                  });
+                                }
+                              },
+                        icon: loading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.how_to_reg_rounded),
+                        label: Text(
+                            loading ? 'Registrando...' : 'Crear mi perfil'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF059669),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    firstNameCtrl.dispose();
+    lastNameCtrl.dispose();
+    phoneCtrl.dispose();
+    emailCtrl.dispose();
+    licenseCtrl.dispose();
+    pinCtrl.dispose();
+  }
+
+  // ─── Pantalla de bienvenida (sin perfil) ────────────────────────────────
+  Widget _buildWelcomeScreen() {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF0FDF4),
+      appBar: AppBar(
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0F766E), Color(0xFF059669)],
+            ),
+          ),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.local_shipping, color: Colors.white, size: 26),
+            SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Karryt Chofer',
+                    style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white)),
+                Text('Bienvenido',
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.white70)),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _refreshAll,
+          ),
+        ],
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 110,
+                height: 110,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF059669).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: const Icon(Icons.local_shipping_rounded,
+                    size: 60, color: Color(0xFF059669)),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Empieza a trabajar con Karryt',
+                style:
+                    TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Registrate como chofer o selecciona tu perfil existente para empezar a recibir viajes.',
+                style: TextStyle(
+                    fontSize: 15, color: Colors.blueGrey.shade600),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 36),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _showRegisterDriverSheet,
+                  icon: const Icon(Icons.how_to_reg_rounded),
+                  label: const Text('Registrarme como chofer',
+                      style: TextStyle(fontSize: 16)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF059669),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _showDriverProfileSelector,
+                  icon: const Icon(Icons.manage_accounts_rounded),
+                  label: const Text('Seleccionar mi perfil'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0F766E),
+                    side: const BorderSide(color: Color(0xFF0F766E)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline,
+                          color: Color(0xFFB91C1C), size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Text(_error!,
+                              style: const TextStyle(
+                                  color: Color(0xFFB91C1C)))),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Tab: Viajes ──────────────────────────────────────────────────────────
+  Widget _buildRidesTab(DriverDetail selectedDriver) {
+    return RefreshIndicator(
+      onRefresh: _refreshAll,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Toggle disponibilidad prominente
+          _buildAvailabilityBanner(selectedDriver),
+          const SizedBox(height: 14),
+          // Filtros de ventana
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              ...const [6, 12, 24, 48].map((h) => ChoiceChip(
+                    label: Text('${h}h'),
+                    selected: _scheduledWindowHours == h,
+                    onSelected: (_) {
+                      setState(() {
+                        _scheduledWindowHours = h;
+                        _customWindowController.text = '$h';
+                      });
+                      unawaited(_saveScheduledWindowPreference(h));
+                      _loadRides();
+                    },
+                  )),
+              FilterChip(
+                label: const Text('Solo activos'),
+                selected: _activeOnly,
+                onSelected: (v) {
+                  setState(() => _activeOnly = v);
+                  _loadRides();
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_error != null) ...[
+            KarrytStatusBanner(message: _error!, type: 'error'),
+            const SizedBox(height: 10),
+          ],
+          if (_rides.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 40),
+              child: KarrytEmptyState(
+                icon: Icons.local_shipping_outlined,
+                title: 'Sin viajes disponibles',
+                subtitle:
+                    'Aumenta la ventana de tiempo o activa disponibilidad.',
+              ),
+            )
+          else
+            ..._rides.map(_buildRideCard),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvailabilityBanner(DriverDetail driver) {
+    final isAvailable = driver.available;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isAvailable
+              ? [const Color(0xFF059669), const Color(0xFF10B981)]
+              : [const Color(0xFF6B7280), const Color(0xFF9CA3AF)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: (isAvailable
+                    ? const Color(0xFF059669)
+                    : const Color(0xFF6B7280))
+                .withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              isAvailable
+                  ? Icons.sensors_rounded
+                  : Icons.sensors_off_rounded,
+              color: Colors.white,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isAvailable ? 'Disponible' : 'Fuera de servicio',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  isAvailable
+                      ? 'Recibes nuevos viajes'
+                      : 'No recibes solicitudes',
+                  style: const TextStyle(
+                      color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: isAvailable,
+            onChanged: (v) => _toggleAvailability(v),
+            activeColor: Colors.white,
+            activeTrackColor: Colors.white.withValues(alpha: 0.4),
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: Colors.white.withValues(alpha: 0.25),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Tab: Ganancias ───────────────────────────────────────────────────────
+  Widget _buildEarningsTab(DriverDetail selectedDriver) {
+    return RefreshIndicator(
+      onRefresh: _loadAccountStatement,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Selector de periodo
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [7, 15, 30, 60, 90].map((d) {
+              return d;
+            }).map((days) => ChoiceChip(
+                  label: Text('$days días'),
+                  selected: _statementWindowDays == days,
+                  onSelected: (_) {
+                    setState(() => _statementWindowDays = days);
+                    _loadAccountStatement();
+                  },
+                )).toList(),
+          ),
+          const SizedBox(height: 14),
+          if (_loadingAccountStatement)
+            const Padding(
+              padding: EdgeInsets.only(top: 30),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_accountStatement == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 40),
+              child: KarrytEmptyState(
+                icon: Icons.account_balance_wallet_outlined,
+                title: 'Sin movimientos',
+                subtitle: 'No hay datos de ganancias en este periodo.',
+              ),
+            )
+          else ...[
+            // Resumen de ganancias
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.9,
+              children: [
+                _buildEarningCard(
+                  icon: Icons.payments_outlined,
+                  label: 'Ingresos brutos',
+                  value:
+                      'MXN ${_accountStatement!.summary.grossEarnings.toStringAsFixed(2)}',
+                  color: const Color(0xFF15803D),
+                ),
+                _buildEarningCard(
+                  icon: Icons.percent_outlined,
+                  label: 'Comisiones',
+                  value:
+                      'MXN ${_accountStatement!.summary.commissions.toStringAsFixed(2)}',
+                  color: const Color(0xFFB45309),
+                ),
+                _buildEarningCard(
+                  icon: Icons.account_balance_wallet_outlined,
+                  label: 'Neto',
+                  value:
+                      'MXN ${_accountStatement!.summary.netEarnings.toStringAsFixed(2)}',
+                  color: const Color(0xFF0F766E),
+                ),
+                _buildEarningCard(
+                  icon: Icons.savings_outlined,
+                  label: 'Saldo disponible',
+                  value:
+                      'MXN ${_accountStatement!.summary.balance.toStringAsFixed(2)}',
+                  color: const Color(0xFF1D4ED8),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Periodo: ${_accountStatement!.from} al ${_accountStatement!.to}',
+              style: TextStyle(
+                  color: Colors.blueGrey.shade600,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Movimientos',
+                      style: TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w800)),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _exportDriverStatementCsv,
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: const Text('Exportar CSV'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_accountStatement!.entries.isEmpty)
+              const Text('No hay movimientos en el periodo.',
+                  style: TextStyle(color: Colors.grey))
+            else
+              ..._accountStatement!.entries.take(50).map((entry) {
+                final isCredit = entry.amount >= 0;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: (isCredit
+                                  ? const Color(0xFF15803D)
+                                  : const Color(0xFFDC2626))
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          isCredit
+                              ? Icons.arrow_downward_rounded
+                              : Icons.arrow_upward_rounded,
+                          size: 20,
+                          color: isCredit
+                              ? const Color(0xFF15803D)
+                              : const Color(0xFFDC2626),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_ledgerTypeLabel(entry.type),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
+                            if (entry.description.isNotEmpty)
+                              Text(entry.description,
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.grey)),
+                            Text(entry.createdAt,
+                                style: const TextStyle(
+                                    fontSize: 11, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        _moneySigned(entry.amount),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          color: isCredit
+                              ? const Color(0xFF15803D)
+                              : const Color(0xFFDC2626),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEarningCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+              color: color.withValues(alpha: 0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(label,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: color,
+                        fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: color)),
+        ],
+      ),
+    );
+  }
+
+  // ─── Tab: Calificaciones ──────────────────────────────────────────────────
+  Widget _buildRatingsTab() {
+    return RefreshIndicator(
+      onRefresh: _loadRatings,
+      child: _loadingRatings
+          ? const Center(child: CircularProgressIndicator())
+          : _ratings.isEmpty
+              ? const Center(
+                  child: KarrytEmptyState(
+                    icon: Icons.star_outline_rounded,
+                    title: 'Sin calificaciones aun',
+                    subtitle:
+                        'Completa viajes para que tus clientes te califiquen.',
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _ratings.length,
+                  itemBuilder: (ctx, index) {
+                    final entry = _ratings[index];
+                    final hasReply = entry.driverResponse.trim().isNotEmpty;
+                    final starColor = entry.score >= 4
+                        ? const Color(0xFF059669)
+                        : entry.score >= 3
+                            ? const Color(0xFFD97706)
+                            : const Color(0xFFDC2626);
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2)),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color:
+                                      starColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.star_rounded,
+                                        color: starColor, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text('${entry.score}/5',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            color: starColor)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Viaje ${entry.rideId.length > 8 ? entry.rideId.substring(0, 8) : entry.rideId}...',
+                                  style: TextStyle(
+                                      color: Colors.blueGrey.shade500,
+                                      fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (entry.comment.trim().isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '"${entry.comment}"',
+                              style: const TextStyle(
+                                  fontSize: 14, fontStyle: FontStyle.italic),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          if (hasReply)
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0FDF4),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: const Color(0xFF86EFAC)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.reply_rounded,
+                                      color: Color(0xFF059669), size: 16),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(entry.driverResponse,
+                                        style: const TextStyle(
+                                            color: Color(0xFF065F46),
+                                            fontSize: 13)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _replyingRatingId == entry.id
+                                  ? null
+                                  : () => _replyToRating(entry),
+                              icon: _replyingRatingId == entry.id
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Icon(Icons.reply_outlined,
+                                      size: 18),
+                              label: Text(hasReply
+                                  ? 'Editar respuesta'
+                                  : 'Responder calificacion'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+
+  // ─── Tab: Perfil ──────────────────────────────────────────────────────────
+  Widget _buildProfileTab(DriverDetail driver) {
+    const categoryLabels = {
+      'pickup_mini': 'Pick-up Mini',
+      'specialized_1t': 'Pickup Caja Redilas',
+      'truck_3t': 'Especializada 3T',
+      'dump_truck': 'Camion Volteo',
+    };
+
+    final scoreVal = double.tryParse(driver.rating) ?? 0;
+    return RefreshIndicator(
+      onRefresh: _refreshAll,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Tarjeta de identidad del chofer
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0F766E), Color(0xFF059669)],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                    color: const Color(0xFF059669).withValues(alpha: 0.4),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(Icons.local_shipping_rounded,
+                          color: Colors.white, size: 34),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(driver.name,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900)),
+                          Text(driver.vehicleName,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: driver.available
+                            ? Colors.white.withValues(alpha: 0.25)
+                            : Colors.black.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        driver.available
+                            ? 'Disponible'
+                            : 'Fuera',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    _buildProfileStat(
+                        '${driver.completedRides}', 'viajes', Colors.white),
+                    const SizedBox(width: 20),
+                    _buildProfileStat(scoreVal.toStringAsFixed(1),
+                        'calificacion', Colors.white),
+                    const SizedBox(width: 20),
+                    _buildProfileStat(
+                        categoryLabels[driver.category] ?? driver.category,
+                        'categoria',
+                        Colors.white),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Configuración de ventana de tiempo
+          Card(
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Configuracion de viajes',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 12),
+                  const Text('Ventana de tiempo para viajes programados:',
+                      style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: const [6, 12, 24, 48].map((h) {
+                      return ChoiceChip(
+                        label: Text('${h}h'),
+                        selected: _scheduledWindowHours == h,
+                        onSelected: (_) {
+                          setState(() {
+                            _scheduledWindowHours = h;
+                            _customWindowController.text = '$h';
+                          });
+                          unawaited(_saveScheduledWindowPreference(h));
+                          _loadRides();
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _customWindowController,
+                          decoration: const InputDecoration(
+                              labelText: 'Horas personalizadas',
+                              border: OutlineInputBorder(),
+                              isDense: true),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: _applyCustomWindowHours,
+                        child: const Text('OK'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Disponibilidad
+          Card(
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Estado de servicio',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: driver.available
+                              ? null
+                              : () => _toggleAvailability(true),
+                          icon: const Icon(Icons.sensors_rounded),
+                          label: const Text('Activarme'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF059669),
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor:
+                                const Color(0xFF059669).withValues(alpha: 0.3),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: !driver.available
+                              ? null
+                              : () => _toggleAvailability(false),
+                          icon: const Icon(Icons.sensors_off_rounded),
+                          label: const Text('Pausarme'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF6B7280),
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor:
+                                const Color(0xFF6B7280).withValues(alpha: 0.3),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Acciones de sesión
+          Card(
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.swap_horiz_rounded,
+                      color: Color(0xFF0F766E)),
+                  title: const Text('Cambiar perfil de chofer'),
+                  subtitle: const Text('Cambia a otro conductor registrado'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _showDriverProfileSelector,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.how_to_reg_rounded,
+                      color: Color(0xFF059669)),
+                  title: const Text('Registrar nuevo chofer'),
+                  subtitle: const Text('Alta de un nuevo perfil en Karryt'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _showRegisterDriverSheet,
+                ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  leading: const Icon(Icons.logout_rounded,
+                      color: Color(0xFFDC2626)),
+                  title: const Text('Cerrar sesion',
+                      style: TextStyle(color: Color(0xFFDC2626))),
+                  subtitle: const Text(
+                      'Cierra la sesion local en este dispositivo'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _logoutDriverSession,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileStat(String value, String label, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value,
+            style: TextStyle(
+                color: color,
+                fontSize: 16,
+                fontWeight: FontWeight.w900)),
+        Text(label,
+            style: TextStyle(
+                color: color.withValues(alpha: 0.75), fontSize: 11)),
+      ],
+    );
+  }
+
+  // ─── AppBar del chofer conectado ──────────────────────────────────────────
+  PreferredSizeWidget _buildDriverAppBar(DriverDetail driver) {
+    return AppBar(
+      elevation: 4,
+      shadowColor: Colors.black.withValues(alpha: 0.18),
+      flexibleSpace: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF0F766E), Color(0xFF059669)],
+          ),
+        ),
+      ),
+      title: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.white.withValues(alpha: 0.18),
+            child: Text(
+              _driverInitials(driver.name),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(driver.name,
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white),
+                    overflow: TextOverflow.ellipsis),
+                Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: driver.available
+                            ? const Color(0xFF6EE7B7)
+                            : const Color(0xFFD1D5DB),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      'Sesion activa',
+                      style: TextStyle(fontSize: 11, color: Colors.white70),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      driver.available
+                          ? 'Disponible'
+                          : 'Fuera de servicio',
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        if (_rides.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.local_shipping_outlined,
+                      color: Colors.white),
+                  onPressed: () => setState(() => _tabIndex = 0),
+                ),
+                Positioned(
+                  right: 6,
+                  top: 6,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${math.min(_rides.length, 9)}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        IconButton(
+          tooltip: 'Actualizar',
+          icon: const Icon(Icons.refresh, color: Colors.white),
+          onPressed: _refreshAll,
+        ),
+      ],
+    );
+  }
+
+  String _driverInitials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    if (parts.isEmpty) {
+      return 'K';
+    }
+    if (parts.length == 1) {
+      return parts.first.substring(0, 1).toUpperCase();
+    }
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
+        .toUpperCase();
+  }
+
   Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF0FDF4),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.local_shipping_rounded,
+                  size: 64, color: Color(0xFF059669)),
+              const SizedBox(height: 20),
+              const CircularProgressIndicator(
+                  color: Color(0xFF059669)),
+              const SizedBox(height: 16),
+              Text('Cargando Karryt Chofer...',
+                  style: TextStyle(
+                      color: Colors.blueGrey.shade600, fontSize: 15)),
+            ],
+          ),
+        ),
+      );
+    }
+
     final selectedDriver = _drivers
         .where((d) => d.id == _selectedDriverId)
         .cast<DriverDetail?>()
         .firstOrNull;
+
+    final activeDriver = selectedDriver ?? _selectedDriverSnapshot;
+
+    // Sin perfil seleccionado → pantalla de bienvenida
+    if (activeDriver == null) {
+      return _buildWelcomeScreen();
+    }
+
+    // Con perfil → interfaz completa con tabs
+    final tabs = [
+      _buildRidesTab(activeDriver),
+      _buildEarningsTab(activeDriver),
+      _buildRatingsTab(),
+      _buildProfileTab(activeDriver),
+    ];
 
     return Shortcuts(
       shortcuts: const <ShortcutActivator, Intent>{
@@ -14865,6 +17035,7 @@ class _DriverScreenState extends State<DriverScreen> {
                   _refreshAll();
                   break;
                 case 'driverStatement':
+                  setState(() => _tabIndex = 1);
                   _loadAccountStatement();
                   break;
                 case 'driverCommands':
@@ -14879,512 +17050,62 @@ class _DriverScreenState extends State<DriverScreen> {
           autofocus: true,
           child: Scaffold(
             backgroundColor: const Color(0xFFF4F7FB),
-            appBar: AppBar(
-              elevation: 4,
-              shadowColor: Colors.black.withValues(alpha: 0.18),
-              flexibleSpace: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF0F766E), Color(0xFF059669)],
-                  ),
-                ),
-              ),
-              title: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(10),
+            appBar: _buildDriverAppBar(activeDriver),
+            body: IndexedStack(
+              index: _tabIndex,
+              children: tabs,
+            ),
+            bottomNavigationBar: BottomNavigationBar(
+              currentIndex: _tabIndex,
+              onTap: (i) => setState(() => _tabIndex = i),
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: const Color(0xFF059669),
+              unselectedItemColor: Colors.blueGrey.shade400,
+              backgroundColor: Colors.white,
+              elevation: 12,
+              selectedFontSize: 12,
+              unselectedFontSize: 11,
+              items: [
+                BottomNavigationBarItem(
+                  icon: Badge(
+                    isLabelVisible: _rides.isNotEmpty,
+                    label: Text(
+                      '${math.min(_rides.length, 99)}',
+                      style: const TextStyle(fontSize: 10),
                     ),
-                    child: const Icon(
-                      Icons.local_shipping,
-                      color: Colors.white,
-                      size: 26,
+                    child: const Icon(Icons.local_shipping_outlined),
+                  ),
+                  activeIcon: Badge(
+                    isLabelVisible: _rides.isNotEmpty,
+                    label: Text(
+                      '${math.min(_rides.length, 99)}',
+                      style: const TextStyle(fontSize: 10),
                     ),
+                    child: const Icon(Icons.local_shipping_rounded),
                   ),
-                  const SizedBox(width: 12),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Karryt Chofer',
-                          style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white)),
-                      Text('Aceptacion y seguimiento',
-                          style:
-                              TextStyle(fontSize: 11, color: Colors.white70)),
-                    ],
+                  label: 'Viajes',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.account_balance_wallet_outlined),
+                  activeIcon: Icon(Icons.account_balance_wallet_rounded),
+                  label: 'Ganancias',
+                ),
+                BottomNavigationBarItem(
+                  icon: Badge(
+                    isLabelVisible: _ratings.any(
+                        (r) => r.driverResponse.trim().isEmpty),
+                    child: const Icon(Icons.star_outline_rounded),
                   ),
-                ],
-              ),
-              actions: [
-                IconButton(
-                  onPressed: _refreshAll,
-                  icon: const Icon(Icons.refresh),
+                  activeIcon: const Icon(Icons.star_rounded),
+                  label: 'Calificaciones',
                 ),
-                IconButton(
-                  tooltip: 'Cerrar sesion chofer',
-                  onPressed: _logoutDriverSession,
-                  icon: const Icon(Icons.logout_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Cambiar perfil',
-                  onPressed: _showDriverProfileSelector,
-                  icon: const Icon(Icons.manage_accounts_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Comandos y atajos',
-                  onPressed: _showDriverCommandMenu,
-                  icon: const Icon(Icons.keyboard_command_key),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.person_outline_rounded),
+                  activeIcon: Icon(Icons.person_rounded),
+                  label: 'Perfil',
                 ),
               ],
             ),
-            body: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: _refreshAll,
-                    child: ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        if (_error != null) ...[
-                          KarrytStatusBanner(
-                            message: _error!,
-                            type: 'error',
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        Card(
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Perfil de chofer',
-                                    style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w800)),
-                                const SizedBox(height: 10),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: selectedDriver == null
-                                          ? const [
-                                              Color(0xFFFFFFFF),
-                                              Color(0xFFF8FAFC),
-                                            ]
-                                          : const [
-                                              Color(0xFF10B981),
-                                              Color(0xFF0EA5E9),
-                                            ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: selectedDriver == null
-                                          ? const Color(0xFFE2E8F0)
-                                          : const Color(0xFF0F766E),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.badge_rounded,
-                                        color: selectedDriver == null
-                                            ? const Color(0xFF64748B)
-                                            : Colors.white,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          selectedDriver == null
-                                              ? 'Sin perfil activo. Selecciona tu cuenta de chofer.'
-                                              : '${selectedDriver.name} · ${selectedDriver.vehicleName}',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: selectedDriver == null
-                                                ? const Color(0xFF334155)
-                                                : Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                      FilledButton.icon(
-                                        onPressed: _showDriverProfileSelector,
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor:
-                                              selectedDriver == null
-                                                  ? const Color(0xFF0EA5E9)
-                                                  : Colors.white,
-                                          foregroundColor:
-                                              selectedDriver == null
-                                                  ? Colors.white
-                                                  : const Color(0xFF0F766E),
-                                        ),
-                                        icon: const Icon(Icons.person_search),
-                                        label: Text(selectedDriver == null
-                                            ? 'Elegir'
-                                            : 'Cambiar'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                if (selectedDriver != null) ...[
-                                  Text('Categoria: ${selectedDriver.category}'),
-                                  Text('Capacidad: ${selectedDriver.capacity}'),
-                                  Text(
-                                      'Rating: ${selectedDriver.rating} (${selectedDriver.ratingCount} calificaciones)'),
-                                  Text(
-                                      'Viajes completados: ${selectedDriver.completedRides}'),
-                                  const SizedBox(height: 10),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: _windowOptions
-                                        .map(
-                                          (hours) => ChoiceChip(
-                                            label: Text('${hours}h'),
-                                            selected:
-                                                _scheduledWindowHours == hours,
-                                            onSelected: (_) {
-                                              setState(() {
-                                                _scheduledWindowHours = hours;
-                                                _customWindowController.text =
-                                                    '$hours';
-                                              });
-                                              unawaited(
-                                                  _saveScheduledWindowPreference(
-                                                      hours));
-                                              _loadRides();
-                                            },
-                                          ),
-                                        )
-                                        .toList(),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: _statementWindowOptions
-                                        .map(
-                                          (days) => ChoiceChip(
-                                            label: Text('EC ${days}d'),
-                                            selected:
-                                                _statementWindowDays == days,
-                                            onSelected: (_) {
-                                              setState(() {
-                                                _statementWindowDays = days;
-                                              });
-                                              _loadAccountStatement();
-                                            },
-                                          ),
-                                        )
-                                        .toList(),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: PremiumTextField(
-                                          controller: _customWindowController,
-                                          label: 'Ventana programada (horas)',
-                                          keyboardType: TextInputType.number,
-                                          icon: Icons.schedule_send,
-                                          isDense: true,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      EnhancedFilledButton(
-                                        onPressed: _applyCustomWindowHours,
-                                        icon: Icons.done_all,
-                                        label: 'Aplicar',
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      EnhancedFilledButton(
-                                        onPressed: () =>
-                                            _toggleAvailability(true),
-                                        icon: Icons.toggle_on_outlined,
-                                        label: 'Disponible',
-                                      ),
-                                      EnhancedFilledButton(
-                                        onPressed: () =>
-                                            _toggleAvailability(false),
-                                        icon: Icons.toggle_off_outlined,
-                                        label: 'Fuera de servicio',
-                                      ),
-                                      FilterChip(
-                                        label: const Text('Solo activos'),
-                                        selected: _activeOnly,
-                                        onSelected: (value) {
-                                          setState(() {
-                                            _activeOnly = value;
-                                          });
-                                          _loadRides();
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Card(
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Expanded(
-                                      child: Text('Estado de cuenta',
-                                          style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w700)),
-                                    ),
-                                    IconButton(
-                                      onPressed: _loadingAccountStatement
-                                          ? null
-                                          : _loadAccountStatement,
-                                      icon: const Icon(Icons.refresh),
-                                    ),
-                                    FilledButton.tonalIcon(
-                                      onPressed: _loadingAccountStatement
-                                          ? null
-                                          : _exportDriverStatementCsv,
-                                      icon: const Icon(Icons.download_outlined),
-                                      label: const Text('Exportar CSV'),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                if (_loadingAccountStatement)
-                                  const LinearProgressIndicator()
-                                else if (_accountStatement == null)
-                                  const Text(
-                                      'Sin datos de estado de cuenta para el chofer seleccionado.')
-                                else ...[
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: 10,
-                                    children: [
-                                      SizedBox(
-                                        width: 220,
-                                        child: _buildDriverMetric(
-                                          icon: Icons.payments_outlined,
-                                          label: 'Ingresos brutos',
-                                          value:
-                                              'MXN ${_accountStatement!.summary.grossEarnings.toStringAsFixed(2)}',
-                                          color: const Color(0xFF15803D),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 220,
-                                        child: _buildDriverMetric(
-                                          icon: Icons.percent_outlined,
-                                          label: 'Comisiones',
-                                          value:
-                                              'MXN ${_accountStatement!.summary.commissions.toStringAsFixed(2)}',
-                                          color: const Color(0xFFB45309),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 220,
-                                        child: _buildDriverMetric(
-                                          icon: Icons
-                                              .account_balance_wallet_outlined,
-                                          label: 'Neto',
-                                          value:
-                                              'MXN ${_accountStatement!.summary.netEarnings.toStringAsFixed(2)}',
-                                          color: const Color(0xFF0F766E),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 220,
-                                        child: _buildDriverMetric(
-                                          icon: Icons.savings_outlined,
-                                          label: 'Saldo disponible',
-                                          value:
-                                              'MXN ${_accountStatement!.summary.balance.toStringAsFixed(2)}',
-                                          color: const Color(0xFF1D4ED8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    'Periodo: ${_accountStatement!.from} a ${_accountStatement!.to}',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade700,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  if (_accountStatement!.entries.isEmpty)
-                                    const Text(
-                                        'No hay movimientos en el periodo seleccionado.')
-                                  else
-                                    ..._accountStatement!.entries
-                                        .take(20)
-                                        .map((entry) {
-                                      final isCredit = entry.amount >= 0;
-                                      return SmartListTile(
-                                        leading: Icon(
-                                          isCredit
-                                              ? Icons.arrow_downward_rounded
-                                              : Icons.arrow_upward_rounded,
-                                          color: isCredit
-                                              ? Colors.green.shade700
-                                              : Colors.red.shade700,
-                                        ),
-                                        title:
-                                            Text(_ledgerTypeLabel(entry.type)),
-                                        subtitle: Text(
-                                          '${entry.description.isEmpty ? 'Sin descripcion' : entry.description} · ${entry.createdAt}',
-                                        ),
-                                        trailing: Text(
-                                          _moneySigned(entry.amount),
-                                          style: TextStyle(
-                                            color: isCredit
-                                                ? Colors.green.shade700
-                                                : Colors.red.shade700,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      );
-                                    }),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Card(
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Calificaciones recibidas',
-                                    style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w700)),
-                                const SizedBox(height: 8),
-                                if (_loadingRatings)
-                                  const LinearProgressIndicator()
-                                else if (_ratings.isEmpty)
-                                  const Text(
-                                      'Aun no hay calificaciones para este chofer.')
-                                else
-                                  ..._ratings.take(8).map((entry) {
-                                    final hasReply =
-                                        entry.driverResponse.trim().isNotEmpty;
-                                    return Container(
-                                      margin: const EdgeInsets.only(bottom: 8),
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                            color: const Color(0xFFE2E8F0)),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            '${entry.score}/5 estrellas · viaje ${entry.rideId.substring(0, math.min(8, entry.rideId.length))}',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.w700),
-                                          ),
-                                          if (entry.comment
-                                              .trim()
-                                              .isNotEmpty) ...[
-                                            const SizedBox(height: 4),
-                                            Text(entry.comment),
-                                          ],
-                                          const SizedBox(height: 6),
-                                          if (hasReply)
-                                            Text(
-                                              'Tu respuesta: ${entry.driverResponse}',
-                                              style: TextStyle(
-                                                color: Colors.teal.shade700,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            )
-                                          else
-                                            Text(
-                                              'Sin respuesta del chofer',
-                                              style: TextStyle(
-                                                  color:
-                                                      Colors.orange.shade800),
-                                            ),
-                                          const SizedBox(height: 6),
-                                          FilledButton.tonalIcon(
-                                            onPressed: _replyingRatingId ==
-                                                    entry.id
-                                                ? null
-                                                : () => _replyToRating(entry),
-                                            icon: _replyingRatingId == entry.id
-                                                ? const SizedBox(
-                                                    width: 14,
-                                                    height: 14,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                            strokeWidth: 2),
-                                                  )
-                                                : const Icon(
-                                                    Icons.reply_outlined),
-                                            label: Text(hasReply
-                                                ? 'Editar respuesta'
-                                                : 'Responder'),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        ..._rides.map((ride) => _buildRideCard(ride)),
-                        if (_rides.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 16),
-                            child: KarrytEmptyState(
-                              icon: Icons.filter_alt_off_outlined,
-                              title: 'Sin viajes',
-                              subtitle:
-                                  'Ajusta los filtros para ver más resultados.',
-                            ),
-                          ),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
-                  ),
           ),
         ),
       ),
@@ -15392,42 +17113,167 @@ class _DriverScreenState extends State<DriverScreen> {
   }
 
   Widget _buildRideCard(RideData ride) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    final isBusy = _busyRideActionId == ride.id;
+    final isActive = ['searching', 'pending_driver', 'in_progress',
+        'driver_arriving', 'accepted'].contains(ride.status);
+    final statusColor = ride.status == 'completed'
+        ? const Color(0xFF059669)
+        : ride.status == 'cancelled'
+            ? const Color(0xFFDC2626)
+            : ride.status == 'in_progress'
+                ? const Color(0xFF2563EB)
+                : const Color(0xFFD97706);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isActive
+              ? const Color(0xFF059669).withValues(alpha: 0.4)
+              : const Color(0xFFE2E8F0),
+          width: isActive ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isActive
+                    ? const Color(0xFF059669)
+                    : Colors.black)
+                .withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Viaje ${ride.id}',
-                style: const TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
+            // Cabecera
             Row(
               children: [
-                const Text('Estado:'),
-                const SizedBox(width: 8),
-                StatusBadge(
-                  label: statusToLabel(ride.status),
-                  status: ride.status,
-                  pulse: ['searching', 'pending_driver', 'in_progress']
-                      .contains(ride.status),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    statusToLabel(ride.status),
+                    style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12),
+                  ),
+                ),
+                if (isActive)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF059669),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                const Spacer(),
+                Text(
+                  'MXN ${ride.fareEstimate.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: Color(0xFF059669)),
                 ),
               ],
             ),
-            Text('Solicitud: ${requestTypeToLabel(ride.requestType)}'),
-            if (ride.scheduledAt != null)
-              Text('Programado: ${formatScheduledAtLocal(ride.scheduledAt)}'),
-            Text('Origen: ${ride.pickup}'),
-            Text('Destino: ${ride.dropoff}'),
-            Text('Distancia: ${ride.tripDistanceKm.toStringAsFixed(1)} km'),
-            if (ride.customer != null)
-              Text(
-                  'Cliente: ${ride.customer!.fullName} · Rating ${ride.customer!.rating} (${ride.customer!.ratingCount})'),
-            Text('Tarifa: MXN ${ride.fareEstimate.toStringAsFixed(2)}'),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            // Origen / Destino
+            Row(
+              children: [
+                Column(
+                  children: [
+                    const Icon(Icons.trip_origin_rounded,
+                        color: Color(0xFF059669), size: 16),
+                    Container(
+                        width: 2,
+                        height: 18,
+                        color: Colors.blueGrey.shade200),
+                    const Icon(Icons.location_on_rounded,
+                        color: Color(0xFFDC2626), size: 16),
+                  ],
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(ride.pickup,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 10),
+                      Text(ride.dropoff,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: Colors.blueGrey.shade700),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('${ride.tripDistanceKm.toStringAsFixed(1)} km',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 13)),
+                    Text(requestTypeToLabel(ride.requestType),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blueGrey.shade500)),
+                    if (ride.scheduledAt != null)
+                      Text(
+                        formatScheduledAtLocal(ride.scheduledAt)
+                            .replaceFirst('Prog: ', ''),
+                        style: const TextStyle(
+                            fontSize: 11, color: Color(0xFFD97706)),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            if (ride.customer != null) ...[
+              const Divider(height: 20),
+              Row(
+                children: [
+                  const Icon(Icons.person_outline_rounded,
+                      size: 16, color: Colors.blueGrey),
+                  const SizedBox(width: 6),
+                  Text(ride.customer!.fullName,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  const Icon(Icons.star_rounded,
+                      size: 14, color: Color(0xFFD97706)),
+                  const SizedBox(width: 3),
+                  Text(ride.customer!.rating,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12)),
+                  Text(' (${ride.customer!.ratingCount})',
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
             SmoothProgressIndicator(progress: ride.progress),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
+            // Acciones
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -15435,41 +17281,71 @@ class _DriverScreenState extends State<DriverScreen> {
                 if (ride.status == 'searching' ||
                     ride.status == 'scheduled' ||
                     ride.status == 'pending_driver')
-                  EnhancedFilledButton(
-                    onPressed: () => _setRideStatus(ride, 'accepted'),
-                    icon: Icons.check_circle_outline,
-                    label: 'Aceptar viaje',
+                  FilledButton.icon(
+                    onPressed: isBusy
+                        ? null
+                        : () => _setRideStatus(ride, 'accepted'),
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: const Text('Aceptar'),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF059669)),
                   ),
-                OutlinedButton(
-                  onPressed: () => _setRideStatus(ride, 'driver_arriving'),
-                  child: const Text('En camino'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _setRideStatus(ride, 'in_progress'),
-                  child: const Text('Iniciar carga'),
-                ),
-                EnhancedFilledButton(
-                  onPressed: () => _setRideStatus(ride, 'completed'),
-                  icon: Icons.flag_outlined,
-                  label: 'Finalizar',
-                ),
+                if (ride.status == 'accepted')
+                  FilledButton.icon(
+                    onPressed: isBusy
+                        ? null
+                        : () => _setRideStatus(ride, 'driver_arriving'),
+                    icon: const Icon(Icons.navigation_rounded, size: 18),
+                    label: const Text('En camino'),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB)),
+                  ),
+                if (ride.status == 'driver_arriving')
+                  FilledButton.icon(
+                    onPressed: isBusy
+                        ? null
+                        : () => _setRideStatus(ride, 'in_progress'),
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: const Text('Iniciar carga'),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF7C3AED)),
+                  ),
+                if (ride.status == 'in_progress')
+                  FilledButton.icon(
+                    onPressed: isBusy
+                        ? null
+                        : () => _setRideStatus(ride, 'completed'),
+                    icon: const Icon(Icons.flag_rounded, size: 18),
+                    label: const Text('Finalizar'),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF059669)),
+                  ),
                 if (ride.status == 'completed' &&
                     ride.customer != null &&
                     !ride.driverRatedCustomer)
-                  FilledButton.tonalIcon(
-                    onPressed: _busyRideActionId == ride.id
+                  OutlinedButton.icon(
+                    onPressed: isBusy
                         ? null
                         : () => _rateCustomerForRide(ride),
-                    icon: const Icon(Icons.star_outline),
+                    icon: const Icon(Icons.star_outline, size: 18),
                     label: const Text('Calificar cliente'),
                   ),
-                FilledButton.tonalIcon(
-                  onPressed: _busyRideActionId == ride.id
+                OutlinedButton.icon(
+                  onPressed: isBusy
                       ? null
                       : () => _reportIncidentForRide(ride),
-                  icon: const Icon(Icons.report_problem_outlined),
-                  label: const Text('Reportar incidencia'),
+                  icon: const Icon(Icons.report_problem_outlined, size: 18),
+                  label: const Text('Incidencia'),
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFDC2626),
+                      side: const BorderSide(color: Color(0xFFDC2626))),
                 ),
+                if (isBusy)
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
               ],
             ),
           ],
@@ -15478,3 +17354,5 @@ class _DriverScreenState extends State<DriverScreen> {
     );
   }
 }
+
+

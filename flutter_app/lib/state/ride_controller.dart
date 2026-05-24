@@ -14,7 +14,7 @@ final Map<String, VehicleCategory> _demoCategories = {
   ),
   'specialized_1t': VehicleCategory(
     id: 'specialized_1t',
-    label: 'Especializada 1 tonelada',
+    label: 'Pickup Caja Redilas',
     capacity: 'Hasta 1.1 tonelada',
     description: 'Camionetas especializadas para carga estructurada',
     boxSize: '2.60 x 1.80 x 0.40 m',
@@ -61,7 +61,7 @@ final List<PricingRow> _demoPricing = [
     waitPerMinRate: 4,
   ),
   PricingRow(
-    categoryLabel: 'Especializada 1 tonelada',
+    categoryLabel: 'Pickup Caja Redilas',
     startFare: 300,
     perKmRate: 30,
     waitPerMinRate: 6,
@@ -86,6 +86,8 @@ final Map<String, ({double startFare, double perKmRate})> _demoRateCard = {
   'truck_3t': (startFare: 700, perKmRate: 45),
   'dump_truck': (startFare: 1500, perKmRate: 75),
 };
+
+const double _demoManeuverChargeToCustomer = 300;
 
 class RideController extends ChangeNotifier {
   RideController({
@@ -120,7 +122,13 @@ class RideController extends ChangeNotifier {
   bool requestingRide = false;
   bool quoting = false;
   String fareLabel = 'MXN --.--';
+  double maneuverSurchargePerTrip = _demoManeuverChargeToCustomer;
   String? error;
+  bool maneuverSelected = false;
+  double maneuverDistanceMeters = 0;
+
+  String get maneuverSurchargePerTripLabel =>
+      'MXN ${maneuverSurchargePerTrip.toStringAsFixed(2)}';
 
   void _activateDemoMode(String message) {
     categories = _demoCategories.map(
@@ -155,6 +163,7 @@ class RideController extends ChangeNotifier {
         : {};
     selectedService = services.isNotEmpty ? services.keys.first : null;
     fareLabel = _estimateDemoFare();
+    maneuverSurchargePerTrip = _demoManeuverChargeToCustomer;
     error = message;
   }
 
@@ -170,8 +179,21 @@ class RideController extends ChangeNotifier {
     }
 
     final distance = double.tryParse(distanceText.value.trim()) ?? 0;
-    final total = rate.startFare + (distance * rate.perKmRate);
+    final maneuverSurcharge =
+      maneuverSelected ? _demoManeuverChargeToCustomer : 0;
+    final total = rate.startFare + (distance * rate.perKmRate) + maneuverSurcharge;
     return 'MXN ${total.toStringAsFixed(2)}';
+  }
+
+  void setManeuverOption({
+    required bool selected,
+    required double distanceMeters,
+  }) {
+    maneuverSelected = selected;
+    maneuverDistanceMeters = distanceMeters.isFinite
+        ? (distanceMeters < 0 ? 0 : distanceMeters)
+        : 0;
+    notifyListeners();
   }
 
   Future<void> init() async {
@@ -280,10 +302,17 @@ class RideController extends ChangeNotifier {
         pickup: pickupText.value.trim(),
         dropoff: dropoffText.value.trim(),
         distance: distance,
+        maneuverSelected: maneuverSelected,
+        maneuverDistanceMeters:
+            maneuverSelected ? maneuverDistanceMeters : null,
       );
       fareLabel = result.currencyFormatted;
+      maneuverSurchargePerTrip = result.maneuverSurchargePerTrip > 0
+          ? result.maneuverSurchargePerTrip
+          : _demoManeuverChargeToCustomer;
     } catch (e) {
       fareLabel = _estimateDemoFare();
+      maneuverSurchargePerTrip = _demoManeuverChargeToCustomer;
       error = 'Estimación demo mostrada con tarifas locales.';
     } finally {
       quoting = false;
@@ -356,6 +385,9 @@ class RideController extends ChangeNotifier {
         customerName: 'Cliente App',
         notifyWhatsApp: notifyWhatsApp,
         notifySms: notifySms,
+        maneuverSelected: maneuverSelected,
+        maneuverDistanceMeters:
+            maneuverSelected ? maneuverDistanceMeters : null,
       );
 
       if (requestType == 'scheduled') {
